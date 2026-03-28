@@ -207,6 +207,91 @@ class Netex:
         
         return
 
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, crs='wgs84'):
+        journeys = timetable.find('./n:vehicleJourneys', self.ns)
+        patterns = service.find('./n:journeyPatterns', self.ns)
+        time_demand_types = service.find('./n:timeDemandTypes', self.ns)
+        timing_links = service.find('./n:timingLinks', self.ns)
+        stop_points = service.find('./n:scheduledStopPoints', self.ns)
+        availability_conditions = timetable.find('./n:contentValidityConditions', self.ns)
+
+        stop_points_geodata = {
+            "type": "FeatureCollection",
+            "features": []
+        }
+
+        if journeys is None: return
+
+        vehicle_types = None
+        if resource:
+            vehicle_types = resource.find('./n:vehicleTypes', self.ns)
+
+        if journeys is None: return print('Geen ritdata')
+
+        for journey in journeys:
+
+            journey_data = {
+                'id':journey.attrib['id'],
+                'available_from':None,
+                'available_through':None,
+                'available_day_bits':None,
+                'in_scope_of_operator':None,
+                'number':None
+            }
+
+            if journey.find('./n:validityConditions', self.ns) is not None:
+                refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
+                for ref in refs:
+                    condition = availability_conditions.find(f"./n:AvailabilityCondition[@id='{ref.attrib['ref']}']", self.ns)
+                    if condition:
+                        condition_from = condition.find('./n:FromDate', self.ns)
+                        if condition_from: journey_data['available_from'] = condition_from.text
+                        condition_through = condition.find('./n:ToDate', self.ns)
+                        if condition_through: journey_data['available_through'] = condition_through.text
+                        condition_bits = condition.find('./n:ValidDayBits', self.ns)
+                        if condition_bits: journey_data['available_day_bits'] = condition_bits.text
+
+            owner_operator_el = journey.find('./n:keyList/n:KeyValue/Key[text()="DataOwnerIsOperator"]', self.ns)
+            if owner_operator_el is not None:
+                owner_operator = owner_operator_el.find('../n:Value', self.ns)
+                if owner_operator is not None:
+                    journey_data['in_scope_of_operator'] = (owner_operator.text == 'true')
+
+            journey_number_el = journey.find(f'./n:privateCodes/n:PrivateCode[@id="JourneyNumber"]', self.ns)
+            if journey_number_el: journey['number'] = journey_number_el.text
+
+            realtime_info_el = journey.find(f'./n:Monitored', self.ns)
+            if realtime_info_el: journey['realtime_info'] = (realtime_info_el.text == 'true')
+
+            pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
+            if pattern_ref is not None and patterns is not None:
+                pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref}"]', self.ns)
+                if pattern is not None:
+                    for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
+                        stoppoint_ref = point.find('./ScheduledStopPointRef', self.ns)
+                        if stoppoint_ref is not None and stop_points is not None:
+                            stop_point = stop_points.find(f'./n:ScheduledStopPoint[@id="{stoppoint_ref}"]', self.ns)
+
+                            if stop_point:
+                                stop_point_location = stop_point.find(f"./n:Location", self.ns)
+
+                                if stop_point_location is not None:
+                                    gml = routepoint_location.find("./gml:pos", self.ns)
+
+                                    if gml is not None:
+                                        stop_point['geometry']['coordinates'] = list(pygml.basics.parse_pos(gml.text))
+                                    else:
+                                        lng = stop_point_location.find('./n:Longitude', self.ns)
+                                        lat = stop_point_location.find('./n:Latitude', self.ns)
+
+                                        if lng is not None and lat is not None:
+                                            stop_point['geometry']['coordinates'] = [lng.text, lat.text]
+
+                        pass
+
+
+
+
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None):
         if file is None and str_content is None:
             raise Exception('File or string required')
