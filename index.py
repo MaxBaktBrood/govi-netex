@@ -8,6 +8,8 @@ import gzip
 import requests
 from netex import Netex
 from si_source import getNetexSI
+from nl_source import getNetexNL
+from plot import plot_layer
 
 input_folder = './input'
 
@@ -51,6 +53,9 @@ for item in os.listdir(input_folder):
         file = gzip.open(path, 'r')
         content = file.read()
         netex = Netex(str_content=content)
+
+print('Afbeelding maken...')
+plot_layer(geopandas.read_file('netex.gpkg', layer='routes'))
 
 
 # netex = Netex(file="NeTEx_ARR_NL_20260321_20260322_1405.xml")
