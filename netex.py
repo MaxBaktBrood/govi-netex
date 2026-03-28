@@ -190,7 +190,7 @@ class Netex:
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
 
             df_crs = 'wgs84'
-            found_crs = self.root.find('./n:FrameDefaults/n:DefaultLocationSystem', self.ns)
+            found_crs = compositeFrame.find('./n:FrameDefaults/n:DefaultLocationSystem', self.ns)
             if found_crs is not None:
                 df_crs = found_crs.text
 
