@@ -9,8 +9,9 @@ import requests
 import typing
 
 class Netex:
+    
 
-    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, crs='wgs84'):
+    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
         routes = service.find('./n:routes', self.ns)
 
         if routes is None: return print('Geen routedata')
@@ -156,17 +157,23 @@ class Netex:
         
         return
 
-    def __init__(self, file = None, str_content = None):
+    def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None):
         if file is None and str_content is None:
             raise Exception('File or string required')
         
-
         if file is not None:
             tree = ET.parse(file)
             self.root = tree.getroot()
         else:
             tree = ET.fromstring(str_content)
             self.root = tree
+
+        if epiap_list is not None:
+            epiap_list = list(map(lambda x: ET.fromstring(x), epiap_list))
+        
+        if enum_list is not None:
+            enum_list = list(map(lambda x: ET.fromstring(x), enum_list))
+
     
         self.ns = {
             'n':'http://www.netex.org.uk/netex',
@@ -189,6 +196,6 @@ class Netex:
 
             if service is None: continue
 
-            self.rotues = self.craftRoutes(service=service, crs=df_crs)
+            self.rotues = self.craftRoutes(service=service, resource=resource, enum_list=enum_list, crs=df_crs)
 
         return
