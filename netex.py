@@ -47,9 +47,11 @@ class Netex:
                 routepoint_ref = point.find('./n:RoutePointRef', self.ns).attrib['ref']
                 routepoint = None
                 routepoint_location = service.find(f"./n:routePoints/n:RoutePoint[@id='{routepoint_ref}']/n:Location", self.ns)
+
                 if routepoint_location is not None:
                     gml = routepoint_location.find("./gml:pos", self.ns)
-                    if gml:
+
+                    if gml is not None:
                         routepoint = list(pygml.basics.parse_pos(gml.text))
                     else:
                         lng = routepoint_location.find('./n:Longitude', self.ns)
@@ -57,8 +59,9 @@ class Netex:
 
                         if lng is not None and lat is not None:
                             routepoint = [lng.text, lat.text]
-                        
-                points_geodata['geometry']['coordinates'].append(routepoint)
+                
+                if routepoint is not None:        
+                    points_geodata['geometry']['coordinates'].append(routepoint)
 
                 if previous_routepoint is not None:
                     line_geodata['geometry']['coordinates'].append([
