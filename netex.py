@@ -92,8 +92,11 @@ class Netex:
                 'direction':None,
                 'formula':None,
                 'authority':None,
+                'authority_code':None,
                 'operator':None,
-                'operator_code':None
+                'operator_code':None,
+                'network':None,
+                'network_code':None,
             }
 
             mode_of_transport_el = line.find('./n:TransportMode', self.ns)
@@ -124,17 +127,58 @@ class Netex:
             authority_ref_el = line.find('./n:AuthorityRef', self.ns)
             if authority_ref_el and resource is not None:
                 authority_ref = authority_ref_el.attrib['ref']
-                route_data['authority'] = authority_ref
+
+                if enum_list:
+                    for enum in enum_list:
+                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                        for compositeFrame in compositeFrames:
+                            authority_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:Authority[@id='{authority_ref}']", self.ns)
+                            if authority_el is not None:
+                                name = authority_el.find('./n:Name', self.ns)
+                                if name is not None:
+                                    route_data['authority'] = name.text
+                                code = authority_el.find('./n:ShortName', self.ns)
+                                if code is not None:
+                                    route_data['authority_code'] = code.text
+
+                if route_data['authority'] is None:
+                    route_data['authority'] = authority_ref
 
             operator_ref_el = line.find('./n:OperatorRef', self.ns)
-            if operator_ref_el and resource is not None:
+            if operator_ref_el is not None and resource is not None:
                 operator_ref = operator_ref_el.attrib['ref']
                 operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
                 if operator_el is not None:
-                    name_el = operator_el.find('./n:Name')
+                    name_el = operator_el.find('./n:Name', self.ns)
                     if name_el is not None: route_data['operator'] = name_el.text
-                    code_el = operator_el.find('./n:Name')
+                    code_el = operator_el.find('./n:ShortName', self.ns)
                     if code_el is not None: route_data['operator_code'] = code_el.text
+
+            if 'responsibilitySetRef' in line.attrib:
+                responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
+                if responsibility_el is not None:
+                    for role in responsibility_el:
+                        roletypes = role.find('./n:StakeholderRoleType', self.ns)
+                        organisation = role.find('./n:StakeholderRoleType', self.ns)
+
+                        if roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' '):
+                            area = role.find('./n:ResponsibleAreaRef', self.ns)
+
+                            if area is not None and enum_list is not None:
+                                for enum in enum_list:
+                                    compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                                    for compositeFrame in compositeFrames:
+                                        area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
+                                        if area_el is not None:
+                                            name = area_el.find('./n:Name', self.ns)
+                                            if name is not None:
+                                                route_data['network'] = name.text
+                                            code = area_el.find('./n:ShortName', self.ns)
+                                            if code is not None:
+                                                route_data['network_code'] = code.text
+
+                            if route_data['network'] is None:
+                                route_data['Network'] = area.attrib['ref']
 
             
             direction_el = route.find('./n:DirectionType', self.ns)
