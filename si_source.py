@@ -7,7 +7,7 @@ from zipfile import ZipFile
 import gzip
 import requests
 
-def getNetexSI():
+def getNetexSI(secrets_file={}):
     if 'SI_username' not in secrets_file: return None
     if 'SI_password' not in secrets_file: return None
 
