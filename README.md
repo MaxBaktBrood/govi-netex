@@ -20,6 +20,8 @@ This script supports reading from .zip- and .gz-files, provided in the `./input`
 |[United Kingdom](https://data.bus-data.dft.gov.uk/)|All|No|No|Timetables aren't NeTEx
 |[Italy](https://www.cciss.it/nap/mmtis/public/en/catalog/Asset)|All|Not tested|No|
 |[Switzerland](https://data.opentransportdata.swiss/organization/oevch?q=netex&sort=score+desc%2C+metadata_modified+desc)|All|No|No|No route data.
+|[Sweden](https://www.trafiklab.se/api/netex-datasets/netex-sweden/)|All|No|Yes, link|Api key required.
+
 ## Part of the revival of GOVI
 This project is part of a bigger one. Over 15 years ago, authorities in The Netherlands founded the GOVI-organisation to ensure public transport information was distributed without limits. Today, an extensive load of public transport data is easily accessible, but the data is often limited to a specific country. To be truly limitless, public transport data should not be viewed per country.
 
