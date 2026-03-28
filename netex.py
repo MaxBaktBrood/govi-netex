@@ -116,7 +116,7 @@ class Netex:
                 route_data['line_code'] = line_code_el.text
 
             branding_ref_el = line.find('./n:BrandingRef', self.ns)
-            if branding_ref_el and resource is not None:
+            if branding_ref_el is not None and resource is not None:
                 branding_ref = branding_ref_el.attrib['ref']
                 branding_el = resource.find(f"./n:typesOfValue/n:Branding[@id='{branding_ref}']", self.ns)
                 if branding_el is not None:
@@ -125,7 +125,7 @@ class Netex:
                         route_data['formula'] = name.text
 
             authority_ref_el = line.find('./n:AuthorityRef', self.ns)
-            if authority_ref_el and resource is not None:
+            if authority_ref_el is not None and resource is not None:
                 authority_ref = authority_ref_el.attrib['ref']
 
                 if enum_list:
