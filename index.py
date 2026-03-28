@@ -21,10 +21,15 @@ if os.path.exists('./secrets.json'):
         open('secrets.json', 'r').read()
     )
 
-print(f'Verwerken van Sloveense NeTEx')
-for link, content in getNetexSI():
-    print(f'Verwerken van {link}...')
-    Netex(str_content=content)
+# print(f'Verwerken van Sloveense NeTEx')
+# for link, content in getNetexSI():
+#     print(f'Verwerken van {link}...')
+#     Netex(str_content=content)
+
+print(f'Verwerken van Nederlandse NeTEx')
+getNetexNL(secrets=secrets_file)
+
+print(f'Verwerken van de inputmap')
 
 for item in os.listdir(input_folder):
     path = os.path.join(input_folder, item)
