@@ -199,7 +199,7 @@ class Netex:
                 features=[line_geodata]
             ).set_crs(crs)
 
-            line_gdf.to_file('netex.gpkg', layer="routes", driver="GPKG", mode="a")
+            line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
             points_gdf = geopandas.GeoDataFrame.from_features(
                 features=[points_geodata]
@@ -257,9 +257,9 @@ class Netex:
                         condition_bits = condition.find('./n:ValidDayBits', self.ns)
                         if condition_bits: journey_data['available_day_bits'] = condition_bits.text
 
-            owner_operator_el = journey.find('./n:keyList/n:KeyValue/Key[text()="DataOwnerIsOperator"]', self.ns)
+            owner_operator_el = journey.find('./n:keyList/n:KeyValue[n:Key="DataOwnerIsOperator"]', self.ns)
             if owner_operator_el is not None:
-                owner_operator = owner_operator_el.find('../n:Value', self.ns)
+                owner_operator = owner_operator_el.find('./n:Value', self.ns)
                 if owner_operator is not None:
                     journey_data['in_scope_of_operator'] = (owner_operator.text == 'true')
 
@@ -313,7 +313,7 @@ class Netex:
                                 stop_point_location = stop_point.find("./n:Location", self.ns)
 
                                 if stop_point_location is not None:
-                                    gml = routepoint_location.find("./gml:pos", self.ns)
+                                    gml = stop_point_location.find("./gml:pos", self.ns)
 
                                     if gml is not None:
                                         point_geodata['geometry']['coordinates'] = list(pygml.basics.parse_pos(gml.text))

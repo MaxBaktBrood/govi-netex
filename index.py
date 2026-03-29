@@ -32,7 +32,7 @@ data_sources = [
 
 if len(sys.argv) > 1:
     data_sources = sys.argv[1].split(",")
-    data_sources = map(lambda x: x.upper(), data_sources)
+    data_sources = list(map(lambda x: x.upper(), data_sources))   
 
 if 'SI' in data_sources:
     print(f'Verwerken van Sloveense NeTEx')
@@ -81,7 +81,7 @@ if 'INPUT' in data_sources:
             netex = Netex(str_content=content)
 
 print('Afbeelding maken...')
-plot_layer(geopandas.read_file('netex.gpkg', layer='routes'), output_folder=output_folder)
+plot_layer(geopandas.read_file(f'{output_folder}/netex.gpkg', layer='routes'), output_folder=output_folder)
 
 
 # netex = Netex(file="NeTEx_ARR_NL_20260321_20260322_1405.xml")

@@ -56,8 +56,8 @@ def getNetexSI(secrets_file={}):
                 if os.path.splitext(name)[1] == '.xml':
                     file = netex_zip.open(name, 'r')
                     content = file.read()
-                    si_contents.append((link, netex_bytes))
-                else:
-                    si_contents.append((link, netex_bytes))
+                    si_contents.append((link, content.decode('utf-8')))
+        else:
+            si_contents.append((link, netex_request.content))
 
     return si_contents
