@@ -58,3 +58,6 @@ Currently, these options (keys) are in use:\
 
 ### Output
 All output will be saved in the `./output`-folder. Currently, the script outputs a GeoPackage containing multiple layers, and a image.
+
+## See also
+If you need to work with Netex CEN EPIAP data, please take a look at [Badger](https://github.com/MMTIS/badger/).
