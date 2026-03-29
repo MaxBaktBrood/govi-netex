@@ -236,6 +236,7 @@ class Netex:
         stop_areas = service.find('./n:stopAreas', self.ns)
         availability_conditions = timetable.find('./n:contentValidityConditions', self.ns)
 
+
         stop_points_geodata = {
             "type": "FeatureCollection",
             "features": {}
@@ -302,6 +303,16 @@ class Netex:
                         journey_data['direction'] = direction
 
                     for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
+                        timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
+                        if timing_link_ref is not None and timing_links is not None:
+                            ref = timing_link_ref.attrib['ref']
+                            timing_link = timing_links.find(f'./n:TimingLink[@id="{ref}"]', self.ns)
+                            distance_el = timing_link.find('./n:Distance', self.ns)
+                            if distance_el is not None:
+                                distance = float(distance_el.text)
+                                journey_data['distance'] += distance
+
+                        
                         stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
                         if stoppoint_ref is not None and stop_points is not None and stoppoint_ref.attrib['ref'] not in stop_points_geodata['features']:
                             stop_point: ET.Element = stop_points.find(f'./n:ScheduledStopPoint[@id="{stoppoint_ref.attrib['ref']}"]', self.ns)
