@@ -84,7 +84,25 @@ class Netex:
                 routelink_ref = routelink_el.attrib['ref']
                 routelink = pygml.parse(ET.tostring(service.find(f"./n:routeLinks/n:RouteLink[@id='{routelink_ref}']/gml:LineString", self.ns)))
                 line_geodata['geometry']['coordinates'].append(dict(routelink.__geo_interface__)['coordinates'])
-                
+            
+            if len(line_geodata['geometry']['coordinates']) == 0:
+                journey_patterns = service.find('./n:journeyPatterns', self.ns)
+                servicelinks = service.find('./n:serviceLinks', self.ns)
+
+                if journey_patterns is not None and servicelinks is not None:
+                    for route_ref in journey_patterns.findall(f'./n:ServiceLinkInJourneyPattern/RouteRef[@ref="{route.attrib['id']}"]', self.ns):
+                        pattern: ET.Element = route_ref.find('..')
+
+                        for link in pattern.findall('./n:linksInSequence/n:ServiceLinkInJourneyPattern', self.ns):
+                            servicelink_ref_el = point.find('./n:ServiceLinkRef', self.ns)
+                            if servicelink_ref is not None and servicelinks is not None:
+                                ref = servicelink_ref_el.attrib['ref']
+                                servicelink = servicelinks.find(f'./n:ServiceLink[@id="{ref}"]', self.ns)
+
+                                line_string = servicelink.find(f'./gml:LineString', self.ns)
+                                if line_string is not None:
+                                    line_string_data = pygml.parse(ET.tostring(line_string))
+                                    line_geodata['geometry']['coordinates'].append(dict(line_string_data.__geo_interface__)['coordinates'])
 
             route_data = {
                 'id':route.attrib['id'],
