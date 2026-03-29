@@ -26,3 +26,35 @@ This script supports reading from .zip- and .gz-files, provided in the `./input`
 This project is part of a bigger one. Over 15 years ago, authorities in The Netherlands founded the GOVI-organisation to ensure public transport information was distributed without limits. Today, an extensive load of public transport data is easily accessible, but the data is often limited to a specific country. To be truly limitless, public transport data should not be viewed per country.
 
 GOVI changed it's name to DOVA. DOVA became focussed on domestic developments, while challenging the limitlessness of public transport is still important. This is why, as of April 2026, GOVI returns. This time, borderless information will be the sole goal of GOVI!
+
+## Usage
+Launch the script like so:
+```bash
+python3 index.py NETEX_LIST
+```
+NETEX_LIST is a by comma seperated list of the methods that will be used to retrieve Netex-data. For example: `SI,NL`.
+
+|Method|Meaning|
+|-------|------|
+`SI`,`NL`,`N`,`FIN`,`S`|Get and process NeTEx-files of these countries.
+`input`|Process files provided in the `./input`-directory.
+
+Sometimes, getting the Netex-files of a country requires credentials or an api-key. You will need to provide these in the `./secrets.json`-file.
+
+For example:
+```json
+{
+    "SI_username":"naam",
+    "SI_password":"zeer_veilig_wachtwoord"
+}
+```
+Currently, these options (keys) are in use:\
+`SI_username`, 
+`SI_password`, 
+`NL_username`, 
+`NL_password`, 
+`S_api_key_local` and
+`S_api_key_national`.
+
+### Output
+All output will be saved in the `./output`-folder. Currently, the script outputs a GeoPackage containing multiple layers, and a image.
