@@ -289,7 +289,7 @@ class Netex:
 
             pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
             if pattern_ref is not None and patterns is not None:
-                pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref}"]', self.ns)
+                pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref.attrib['ref']}"]', self.ns)
                 if pattern is not None:
                     routeref_el = pattern.find('./RouteRef', self.ns)
                     if routeref_el is not None:
