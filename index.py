@@ -13,6 +13,7 @@ from url_source import getNetexViaURL
 from plot import plot_layer
 
 input_folder = './input'
+output_folder = './output'
 
 if not os.path.isdir(input_folder):
     print('Map gemaakt om bestanden in te zetten: input')
@@ -67,7 +68,7 @@ for item in os.listdir(input_folder):
         netex = Netex(str_content=content)
 
 print('Afbeelding maken...')
-plot_layer(geopandas.read_file('netex.gpkg', layer='routes'))
+plot_layer(geopandas.read_file('netex.gpkg', layer='routes'), output_folder=output_folder)
 
 
 # netex = Netex(file="NeTEx_ARR_NL_20260321_20260322_1405.xml")

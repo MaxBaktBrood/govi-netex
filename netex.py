@@ -8,6 +8,8 @@ import gzip
 import requests
 import typing
 
+output_folder = './output'
+
 class Netex:
     
 
@@ -203,7 +205,7 @@ class Netex:
                 features=[points_geodata]
             ).set_crs(crs)
 
-            points_gdf.to_file('netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
+            points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
         
         return
 
@@ -295,6 +297,9 @@ class Netex:
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None):
         if file is None and str_content is None:
             raise Exception('File or string required')
+
+        if not os.path.exists(output_folder):
+            os.mkdir(output_folder)
         
         if file is not None:
             tree = ET.parse(file)
