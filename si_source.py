@@ -3,7 +3,8 @@ import geopandas
 import pygml
 import json
 import os
-from zipfile import ZipFile
+from zipfile import ZipFile, is_zipfile
+from io import BytesIO
 import gzip
 import requests
 
@@ -45,8 +46,18 @@ def getNetexSI(secrets_file={}):
 
         if not netex_request.ok:
             raise Exception(f'Netex request geweigerd: {netex_request.status_code}')
-        
-        open(link.replace('/', '_'), 'wb').write(netex_request.content)
-        si_contents.append((link, netex_request.content))
+
+        netex_bytes = BytesIO(netex_request.content)
+
+        if is_zipfile(netex_bytes):
+            netex_zip = ZipFile(BytesIO(netex_request.content))
+            for index, name in enumerate(netex_zip.namelist()):
+                print(f'ZIP: Bestand {index}/{len(netex_zip.namelist())}: {name}')
+                if os.path.splitext(name)[1] == '.xml':
+                    file = netex_zip.open(name, 'r')
+                    content = file.read()
+                    si_contents.append((link, netex_bytes))
+                else:
+                    si_contents.append((link, netex_bytes))
 
     return si_contents
