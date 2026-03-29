@@ -379,19 +379,50 @@ class Netex:
                         
                                 stop_points_geodata['features'].setdefault(point_id, point_geodata)
 
-                        timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
-                        if timing_link_ref is not None and timing_links is not None:
-                            ref = timing_link_ref.attrib['id']
-                            timing_link = timing_links.find(f'./n:TimingLink[@id="{ref}"]', self.ns)
-                            distance_el = timing_link.find('./n:Distance', self.ns)
-                            if distance_el is not None:
-                                distance = float(distance_el.text)
-                                journey['distance'] += distance
+                        route_ref_el = pattern.find('./n:RouteRef', self.ns)
+                        if route_ref_el is not None and 'ref' in route_ref_el.attrib:
+                            line_ref_el = service.find(f'./n:routes/n:Route[@id="{route_ref_el.attrib['ref']}"]/n:LineRef', self.ns)
+                            if line_ref_el is not None and 'ref' in line_ref_el.attrib:
+                                line = service.find(f'./n:lines/n:Line[@id="{line_ref_el.attrib['ref']}"]', self.ns)
+                                if line is not None:
+                                    line_name = None
+                                    line_number = None
+                                    
+                                    line_number_el = line.find('./n:PublicCode', self.ns)
+                                    if line_number_el is not None:
+                                        line_number = line_number_el.text
+                                        line_name = line_number_el.text
+                                    
+                                    line_name_el = line.find('./n:Name', self.ns)
+                                    if line_name_el is not None:
+                                        if line_name:
+                                            line_name += f" {line_name_el.text}"
+                                        else: line_name = line_name_el.text
 
-            time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
-            if time_demand_type_ref is not None and time_demand_types is not None:
-                ref = time_demand_type_ref.attrib['ref']
-                time_demand = time_demand_types.find(f'./n:TimeDemandType[@id="{ref}"]', self.ns)
+                                    stop_points_geodata['features'][stoppoint_ref.attrib['ref']]["properties"]["line_numbers"].add(line_number)
+                                    stop_points_geodata['features'][stoppoint_ref.attrib['ref']]["properties"]["lines"].add(line_name)
+
+            # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
+            # if time_demand_type_ref is not None and time_demand_types is not None:
+            #     ref = time_demand_type_ref.attrib['ref']
+            #     time_demand = time_demand_types.find(f'./n:TimeDemandType[@id="{ref}"]', self.ns)
+
+        stop_points_geodata['features'] = list(stop_points_geodata['features'].values())
+
+        def modifyFeature(x):
+            x["properties"]["line_numbers"] = list(x["properties"]["line_numbers"])
+            x["properties"]["lines"] = list(x["properties"]["lines"])
+            return x
+        
+        stop_points_geodata['features'] = list(map(modifyFeature, stop_points_geodata['features']))
+
+        stop_points_gdf = geopandas.GeoDataFrame.from_features(
+            features=stop_points_geodata
+        ).set_crs(crs)
+
+        stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
+
+
 
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None):
@@ -437,5 +468,6 @@ class Netex:
             if service is None: continue
 
             self.rotues = self.craftRoutes(service=service, resource=resource, enum_list=enum_list, crs=df_crs)
+            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, crs=df_crs)
 
         return
