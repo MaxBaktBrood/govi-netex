@@ -13,11 +13,11 @@ This script supports reading from .zip- and .gz-files, provided in the `./input`
 |[Luxembourg](https://data.public.lu/en/datasets/horaires-et-arrets-des-transport-publics-netex/)|All|No|No|No route data.
 |[France](https://transport.data.gouv.fr/datasets?format=NeTEx)|Réseau SNCF TGV, Intercités et TER|Mostly|No|Geodata is point-to-point.
 |[Norway](https://developer.entur.org/stops-and-timetable-data)|All|No|Yes, link|
-|[Belgium](https://data.belgianmobility.io/nl/data.html#)|All|Not tested|No|
-|[Austria](https://data.mobilitaetsverbuende.at/en/data-sets)|All|Not tested|No|
-|[Germany](https://www.opendata-oepnv.de/ht/de/datensaetze)|All|Not tested|No|No route data.
+|[Belgium](https://data.belgianmobility.io/nl/data.html#)|Unknown|Not tested|No|
+|[Austria](https://data.mobilitaetsverbuende.at/en/data-sets)|All|Partial|No|Only Eastern Austria for some reason...
+|[Germany](https://www.opendata-oepnv.de/ht/de/datensaetze)|All|Mostly|No|Geodata is point-to-point.
 |[Finland](https://mobility.mobility-database.fintraffic.fi/en)|All|No|Yes, link|
-|[United Kingdom](https://data.bus-data.dft.gov.uk/)|All|No|No|Timetables aren't NeTEx
+|[United Kingdom](https://data.bus-data.dft.gov.uk/)|All|No|No|Timetables/routes aren't NeTEx
 |[Italy](https://www.cciss.it/nap/mmtis/public/en/catalog/Asset)|All|Not tested|No|
 |[Switzerland](https://data.opentransportdata.swiss/organization/oevch?q=netex&sort=score+desc%2C+metadata_modified+desc)|All|No|No|No route data.
 |[Sweden](https://www.trafiklab.se/api/netex-datasets/netex-sweden/)|All|No|Yes, link|Api key required.
@@ -58,6 +58,11 @@ Currently, these options (keys) are in use:\
 
 ### Output
 All output will be saved in the `./output`-folder. Currently, the script outputs a GeoPackage containing multiple layers, and a image.
+
+The layers included, are:
+- Routepoints (not so useful)
+- Routes
+- Stoppoints
 
 ## See also
 If you need to work with Netex CEN EPIAP data, please take a look at [Badger](https://github.com/MMTIS/badger/).
