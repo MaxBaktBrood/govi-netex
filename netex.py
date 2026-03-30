@@ -16,7 +16,294 @@ class Netex:
     def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
         routes = service.find('./n:routes', self.ns)
 
-        if routes is None: return print('Geen routedata')
+        def line_information(line: ET.Element, route_data={}) -> {}:
+            route_data['id'] = line.attrib['id']
+
+            mode_of_transport_el = line.find('./n:TransportMode', self.ns)
+            if mode_of_transport_el is not None:
+                route_data['mode_of_transport'] = mode_of_transport_el.text
+            
+            line_number_el = line.find('./n:PublicCode', self.ns)
+            if line_number_el is not None:
+                route_data['line_number'] = line_number_el.text
+            
+            line_name_el = line.find('./n:Name', self.ns)
+            if line_name_el is not None:
+                route_data['line_name'] = line_name_el.text
+            
+            line_code_el = line.find('./n:privateCodes/n:PrivateCode', self.ns)
+            if line_code_el is not None:
+                route_data['line_code'] = line_code_el.text
+
+            branding_ref_el = line.find('./n:BrandingRef', self.ns)
+            if branding_ref_el is not None and resource is not None:
+                branding_ref = branding_ref_el.attrib['ref']
+                branding_el = resource.find(f"./n:typesOfValue/n:Branding[@id='{branding_ref}']", self.ns)
+                if branding_el is not None:
+                    name = branding_el.find('./n:Name', self.ns)
+                    if name is not None:
+                        route_data['formula'] = name.text
+
+            authority_ref_el = line.find('./n:AuthorityRef', self.ns)
+            if authority_ref_el is not None:
+                authority_ref = authority_ref_el.attrib['ref']
+
+                if enum_list is not None:
+                    for enum in enum_list:
+                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                        for compositeFrame in compositeFrames:
+                            authority_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:Authority[@id='{authority_ref}']", self.ns)
+                            if authority_el is not None:
+                                name = authority_el.find('./n:Name', self.ns)
+                                if name is not None:
+                                    route_data['authority'] = name.text
+                                code = authority_el.find('./n:ShortName', self.ns)
+                                if code is not None:
+                                    route_data['authority_code'] = code.text
+                
+                if resource is not None:
+                    authority_el = resource.find(f'./n:organisations/n:Authority[@id="{authority_ref}"]', self.ns)
+                    if authority_el is not None:
+                        name = authority_el.find('./n:Name', self.ns)
+                        if name is not None:
+                            route_data['authority'] = name.text
+                        code = authority_el.find('./n:ShortName', self.ns)
+                        if code is not None:
+                            route_data['authority_code'] = code.text
+
+                if route_data['authority'] is None:
+                    route_data['authority'] = authority_ref
+
+            operator_ref_el = line.find('./n:OperatorRef', self.ns)
+            if operator_ref_el is None:
+               operator_ref_el = line.find('./n:additionalOperators/n:OperatorRef', self.ns) 
+               
+            if operator_ref_el is not None and resource is not None:
+                operator_ref = operator_ref_el.attrib['ref']
+                operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
+                if operator_el is not None:
+                    name_el = operator_el.find('./n:Name', self.ns)
+                    if name_el is not None: route_data['operator'] = name_el.text
+                    code_el = operator_el.find('./n:ShortName', self.ns)
+                    if code_el is not None: route_data['operator_code'] = code_el.text
+
+            if 'responsibilitySetRef' in line.attrib:
+                responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
+                if responsibility_el is not None:
+                    for role in responsibility_el:
+                        roletypes = role.find('./n:StakeholderRoleType', self.ns)
+                        organisation = role.find('./n:StakeholderRoleType', self.ns)
+
+                        if roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' '):
+                            area = role.find('./n:ResponsibleAreaRef', self.ns)
+
+                            if area is not None and enum_list is not None:
+                                for enum in enum_list:
+                                    compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                                    for compositeFrame in compositeFrames:
+                                        area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
+                                        if area_el is not None:
+                                            name = area_el.find('./n:Name', self.ns)
+                                            if name is not None:
+                                                route_data['network'] = name.text
+                                            code = area_el.find('./n:ShortName', self.ns)
+                                            if code is not None:
+                                                route_data['network_code'] = code.text
+
+                            if route_data['network'] is None:
+                                route_data['Network'] = area.attrib['ref']
+        
+            return route_data
+
+        # fallback 1: GERMANY
+        if routes is None:
+            for pattern in service.findall('./n:journeyPatterns/n:ServiceJourneyPattern[n:RouteView]', self.ns):
+                line_geodata = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiLineString",
+                        "coordinates": []
+                    },
+                    "properties":{}
+                }
+                points_geodata = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiPoint",
+                        "coordinates": []
+                    },
+                    "properties":{}
+                }
+
+                route_data = {
+                    'id':None,
+                    'line_id':None,
+                    'mode_of_transport':None,
+                    'line_number':None,
+                    'line_name':None,
+                    'line_code':None,
+                    'direction':None,
+                    'formula':None,
+                    'authority':None,
+                    'authority_code':None,
+                    'operator':None,
+                    'operator_code':None,
+                    'network':None,
+                    'network_code':None,
+                }
+
+                line_ref_el = pattern.find('./n:RouteView/n:LineRef', self.ns)
+                line_ref = None
+                if line_ref_el is not None: 
+                    line_ref = line_ref_el.attrib['ref']
+                    route_data['line_id'] = line_ref
+                line = service.find(f"./n:lines/n:Line[@id='{line_ref}']", self.ns)
+
+                previous_stoppoint = None
+
+                for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
+                    stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns).attrib['ref']
+                    stoppoint = None
+                    stoppoint_location = service.find(f"./n:scheduledStopPoints/n:ScheduledStopPoint[@id='{stoppoint_ref}']/n:Location", self.ns)
+
+                    if stoppoint_location is not None:
+                        gml = stoppoint_location.find("./gml:pos", self.ns)
+
+                        if gml is not None:
+                            stoppoint = list(pygml.basics.parse_pos(gml.text))
+                        else:
+                            lng = stoppoint_location.find('./n:Longitude', self.ns)
+                            lat = stoppoint_location.find('./n:Latitude', self.ns)
+
+                            if lng is not None and lat is not None:
+                                stoppoint = [lng.text, lat.text]
+                    
+                    if stoppoint is not None:        
+                        points_geodata['geometry']['coordinates'].append(stoppoint)
+
+                        if previous_stoppoint is not None:
+                            line_geodata['geometry']['coordinates'].append([
+                                previous_stoppoint,
+                                stoppoint
+                            ])
+                            previous_stoppoint = None
+
+                    if stoppoint:
+                        previous_stoppoint = stoppoint
+
+                if line is not None:
+                    route_data = line_information(line, route_data)
+                
+                # For Germany useless here
+                direction_el = pattern.find('./n:DirectionType', self.ns)
+                if direction_el is not None:
+                    route_data['direction'] = direction_el.text
+                    
+                line_geodata['properties'] = route_data
+                points_geodata['properties'] = route_data
+
+                line_gdf = geopandas.GeoDataFrame.from_features(
+                    features=[line_geodata]
+                ).set_crs(crs)
+
+                line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
+
+                points_gdf = geopandas.GeoDataFrame.from_features(
+                    features=[points_geodata]
+                ).set_crs(crs)
+
+                points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
+
+
+        # fallback 2: AUSTRIA
+        service_journeys = None
+        if timetable is not None:
+            service_journeys = timetable.find('./n:vehicleJourneys', self.ns)
+
+        if routes is None and service_journeys is not None: 
+            patterns = service.find('./n:journeyPatterns', self.ns)
+            processed_routes = []
+
+            for journey in service_journeys.findall('./n:ServiceJourney', self.ns):
+                line_geodata = {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "MultiLineString",
+                        "coordinates": []
+                    },
+                    "properties":{}
+                }
+
+                route_data = {
+                    'id':None,
+                    'line_id':None,
+                    'mode_of_transport':None,
+                    'line_number':None,
+                    'line_name':None,
+                    'line_code':None,
+                    'direction':None,
+                    'formula':None,
+                    'authority':None,
+                    'authority_code':None,
+                    'operator':None,
+                    'operator_code':None,
+                    'network':None,
+                    'network_code':None,
+                }
+
+                made_up_route_id = []
+
+                line_ref_el = journey.find('./n:LineRef', self.ns)
+                line_ref = None
+                if line_ref_el is not None: 
+                    line_ref = line_ref_el.attrib['ref']
+                    made_up_route_id.append(line_ref)
+                line = service.find(f"./n:lines/n:Line[@id='{line_ref}']", self.ns)
+
+                journey_pattern_ref_el = journey.find('./n:ServiceJourneyPatternRef', self.ns)
+                if journey_pattern_ref_el is not None:
+                    made_up_route_id.append(journey_pattern_ref_el.attrib['ref'])
+                    route_data['id'] = "___".join(made_up_route_id)
+
+                    if route_data['id'] in processed_routes: continue
+                    processed_routes.append(route_data['id'])
+
+                    journey_pattern_ref = journey_pattern_ref_el.attrib['ref']
+                    journey_pattern = service.find(f"./n:journeyPatterns/n:ServiceJourneyPattern[@id='{journey_pattern_ref}']", self.ns)
+                    
+                    if journey_pattern is not None:
+                        for link in journey_pattern.findall('./n:linksInSequence/n:ServiceLinkInJourneyPattern', self.ns):
+                            servicelink_ref_el = link.find('./n:ServiceLinkRef', self.ns)
+                            servicelinks = service.find('./n:serviceLinks', self.ns)
+
+                            if servicelink_ref_el is not None and servicelinks is not None:
+                                ref = servicelink_ref_el.attrib['ref']
+                                servicelink = servicelinks.find(f'./n:ServiceLink[@id="{ref}"]', self.ns)
+
+                                line_string = servicelink.find(f'./gml:LineString', self.ns)
+                                if line_string is not None:
+                                    line_string_data = pygml.parse(ET.tostring(line_string))
+                                    line_geodata['geometry']['coordinates'].append(dict(line_string_data.__geo_interface__)['coordinates'])
+
+                        direction_el = journey_pattern.find('./n:DirectionType', self.ns)
+                        if direction_el: route_data['direction'] = direction_el.text()
+                
+                if len(line_geodata['geometry']['coordinates']) == 0: continue
+
+                if line is not None:
+                    route_data = line_information(line, route_data)
+
+                line_geodata['properties'] = route_data
+
+                line_gdf = geopandas.GeoDataFrame.from_features(
+                    features=[line_geodata]
+                ).set_crs(crs)
+                line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
+
+            return
+
+        if routes is None: 
+            return print('Overgeslagen; geen routedata')
 
         for route in routes:
             line_ref_el = route.find('./n:LineRef', self.ns)
@@ -122,89 +409,7 @@ class Netex:
             }
 
             if line is not None:
-                route_data['id'] = line.attrib['id']
-
-                mode_of_transport_el = line.find('./n:TransportMode', self.ns)
-                if mode_of_transport_el is not None:
-                    route_data['mode_of_transport'] = mode_of_transport_el.text
-                
-                line_number_el = line.find('./n:PublicCode', self.ns)
-                if line_number_el is not None:
-                    route_data['line_number'] = line_number_el.text
-                
-                line_name_el = line.find('./n:Name', self.ns)
-                if line_name_el is not None:
-                    route_data['line_name'] = line_name_el.text
-                
-                line_code_el = line.find('./n:privateCodes/n:PrivateCode', self.ns)
-                if line_code_el is not None:
-                    route_data['line_code'] = line_code_el.text
-
-                branding_ref_el = line.find('./n:BrandingRef', self.ns)
-                if branding_ref_el is not None and resource is not None:
-                    branding_ref = branding_ref_el.attrib['ref']
-                    branding_el = resource.find(f"./n:typesOfValue/n:Branding[@id='{branding_ref}']", self.ns)
-                    if branding_el is not None:
-                        name = branding_el.find('./n:Name', self.ns)
-                        if name is not None:
-                            route_data['formula'] = name.text
-
-                authority_ref_el = line.find('./n:AuthorityRef', self.ns)
-                if authority_ref_el is not None and resource is not None:
-                    authority_ref = authority_ref_el.attrib['ref']
-
-                    if enum_list:
-                        for enum in enum_list:
-                            compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                            for compositeFrame in compositeFrames:
-                                authority_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:Authority[@id='{authority_ref}']", self.ns)
-                                if authority_el is not None:
-                                    name = authority_el.find('./n:Name', self.ns)
-                                    if name is not None:
-                                        route_data['authority'] = name.text
-                                    code = authority_el.find('./n:ShortName', self.ns)
-                                    if code is not None:
-                                        route_data['authority_code'] = code.text
-
-                    if route_data['authority'] is None:
-                        route_data['authority'] = authority_ref
-
-                operator_ref_el = line.find('./n:OperatorRef', self.ns)
-                if operator_ref_el is not None and resource is not None:
-                    operator_ref = operator_ref_el.attrib['ref']
-                    operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
-                    if operator_el is not None:
-                        name_el = operator_el.find('./n:Name', self.ns)
-                        if name_el is not None: route_data['operator'] = name_el.text
-                        code_el = operator_el.find('./n:ShortName', self.ns)
-                        if code_el is not None: route_data['operator_code'] = code_el.text
-
-                if 'responsibilitySetRef' in line.attrib:
-                    responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
-                    if responsibility_el is not None:
-                        for role in responsibility_el:
-                            roletypes = role.find('./n:StakeholderRoleType', self.ns)
-                            organisation = role.find('./n:StakeholderRoleType', self.ns)
-
-                            if roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' '):
-                                area = role.find('./n:ResponsibleAreaRef', self.ns)
-
-                                if area is not None and enum_list is not None:
-                                    for enum in enum_list:
-                                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                                        for compositeFrame in compositeFrames:
-                                            area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
-                                            if area_el is not None:
-                                                name = area_el.find('./n:Name', self.ns)
-                                                if name is not None:
-                                                    route_data['network'] = name.text
-                                                code = area_el.find('./n:ShortName', self.ns)
-                                                if code is not None:
-                                                    route_data['network_code'] = code.text
-
-                                if route_data['network'] is None:
-                                    route_data['Network'] = area.attrib['ref']
-
+                route_data = line_information(line, route_data)
             
             direction_el = route.find('./n:DirectionType', self.ns)
             if direction_el is not None:
