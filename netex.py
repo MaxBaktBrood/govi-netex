@@ -13,7 +13,7 @@ output_folder = './output'
 class Netex:
     
 
-    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
+    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
         routes = service.find('./n:routes', self.ns)
 
         def line_information(line: ET.Element, route_data={}) -> {}:
@@ -77,7 +77,7 @@ class Netex:
             operator_ref_el = line.find('./n:OperatorRef', self.ns)
             if operator_ref_el is None:
                operator_ref_el = line.find('./n:additionalOperators/n:OperatorRef', self.ns) 
-               
+
             if operator_ref_el is not None and resource is not None:
                 operator_ref = operator_ref_el.attrib['ref']
                 operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
@@ -305,6 +305,7 @@ class Netex:
         if routes is None: 
             return print('Overgeslagen; geen routedata')
 
+        # Original (NETHERLANDS)
         for route in routes:
             line_ref_el = route.find('./n:LineRef', self.ns)
             line_ref = None
@@ -354,12 +355,12 @@ class Netex:
                 if routepoint is not None:        
                     points_geodata['geometry']['coordinates'].append(routepoint)
 
-                if previous_routepoint is not None:
-                    line_geodata['geometry']['coordinates'].append([
-                        previous_routepoint,
-                        routepoint
-                    ])
-                    previous_routepoint = None
+                    if previous_routepoint is not None:
+                        line_geodata['geometry']['coordinates'].append([
+                            previous_routepoint,
+                            routepoint
+                        ])
+                        previous_routepoint = None
                 
                 routelink_el = point.find('./n:OnwardRouteLinkRef', self.ns)
 
@@ -377,12 +378,12 @@ class Netex:
                 servicelinks = service.find('./n:serviceLinks', self.ns)
 
                 if journey_patterns is not None and servicelinks is not None:
-                    for route_ref in journey_patterns.findall(f'./n:ServiceLinkInJourneyPattern/RouteRef[@ref="{route.attrib['id']}"]', self.ns):
+                    for route_ref in journey_patterns.findall(f'./n:ServiceJourneyPattern/RouteRef[@ref="{route.attrib['id']}"]', self.ns):
                         pattern: ET.Element = route_ref.find('..')
 
                         for link in pattern.findall('./n:linksInSequence/n:ServiceLinkInJourneyPattern', self.ns):
-                            servicelink_ref_el = point.find('./n:ServiceLinkRef', self.ns)
-                            if servicelink_ref is not None and servicelinks is not None:
+                            servicelink_ref_el = link.find('./n:ServiceLinkRef', self.ns)
+                            if servicelink_ref_el is not None and servicelinks is not None:
                                 ref = servicelink_ref_el.attrib['ref']
                                 servicelink = servicelinks.find(f'./n:ServiceLink[@id="{ref}"]', self.ns)
 
@@ -390,7 +391,7 @@ class Netex:
                                 if line_string is not None:
                                     line_string_data = pygml.parse(ET.tostring(line_string))
                                     line_geodata['geometry']['coordinates'].append(dict(line_string_data.__geo_interface__)['coordinates'])
-
+                    
             route_data = {
                 'id':route.attrib['id'],
                 'line_id':None,
@@ -469,7 +470,7 @@ class Netex:
                 'direction':None
             }
 
-            if journey.find('./n:validityConditions', self.ns) is not None:
+            if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
                 for ref in refs:
                     condition = availability_conditions.find(f"./n:AvailabilityCondition[@id='{ref.attrib['ref']}']", self.ns)
@@ -672,7 +673,7 @@ class Netex:
 
             if service is None: continue
 
-            self.rotues = self.craftRoutes(service=service, resource=resource, enum_list=enum_list, crs=df_crs)
+            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
             self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, crs=df_crs)
 
         return
