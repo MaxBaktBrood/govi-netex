@@ -2,9 +2,4 @@ old/**
 xsd/**
 secrets.json
 netex.gpkg
-__pycache__/netex.cpython-312.pyc
-__pycache__/nl_source.cpython-312.pyc
-__pycache__/plot.cpython-312.pyc
-__pycache__/si_source.cpython-312.pyc
-netex.svg
-__pycache__/url_source.cpython-312.pyc
+__pycache__/**

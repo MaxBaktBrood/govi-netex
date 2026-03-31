@@ -9,11 +9,12 @@ This script supports reading from .zip- and .gz-files, provided in the `./input`
 |Country   |Dataset    |Compatible|Autocollect   |Description                |
 |----------|-----------|-----------|--------------|------------------------------------
 |[Slovenia](https://nap.si/en/datasets)|All|Not tested|Yes, API|Credentials required
-|[Netherlands](https://data.ndovloket.nl/netex)|All|Yes (ENUM, EPIAP)|Yes, SFTP|Credentials required. There is no data for most trains.
+|[Netherlands](https://data.ndovloket.nl/netex)|All|Yes (with ENUM)|Yes, SFTP|Credentials required. There is no data for most trains.
 |[Luxembourg](https://data.public.lu/en/datasets/horaires-et-arrets-des-transport-publics-netex/)|All|No|No|No route data.
 |[France](https://transport.data.gouv.fr/datasets?format=NeTEx)|Réseau SNCF TGV, Intercités et TER|Mostly|No|Geodata is point-to-point.
 |[Norway](https://developer.entur.org/stops-and-timetable-data)|All|No|Yes, link|
-|[Belgium](https://data.belgianmobility.io/nl/data.html#)|Unknown|Not tested|No|
+|[Belgium](https://data.belgianmobility.io/nl/data.html#)|NMBS?|Not tested|No|Data not accessible
+|[Belgium](https://data.belgianmobility.io/nl/data.html#)|De Lijn|No|Yes, API|XML filesize too large...
 |[Austria](https://data.mobilitaetsverbuende.at/en/data-sets)|All|Partial|No|Only Eastern Austria for some reason...
 |[Germany](https://www.opendata-oepnv.de/ht/de/datensaetze)|All|Mostly|No|Geodata is point-to-point.
 |[Finland](https://mobility.mobility-database.fintraffic.fi/en)|All|No|Yes, link|
@@ -32,11 +33,11 @@ Launch the script like so:
 ```bash
 python3 index.py NETEX_LIST
 ```
-NETEX_LIST is a by comma seperated list of the methods that will be used to retrieve Netex-data. For example: `SI,NL`.
+NETEX_LIST is a by comma seperated list of the methods that will be used to retrieve Netex-data. For example: `SI,NL`. By default, all options will be used, excluding options from Belgium.
 
 |Method|Meaning|
 |-------|------|
-`SI`,`NL`,`N`,`FIN`,`S`|Get and process NeTEx-files of these countries.
+`SI`,`NL`,`N`,`FIN`,`S`,`B`|Get and process NeTEx-files of these countries.
 `input`|Process files provided in the `./input`-directory.
 
 Sometimes, getting the Netex-files of a country requires credentials or an api-key. You will need to provide these in the `./secrets.json`-file.
@@ -53,8 +54,9 @@ Currently, these options (keys) are in use:\
 `SI_password`, 
 `NL_username`, 
 `NL_password`, 
-`S_api_key_local` and
-`S_api_key_national`.
+`S_api_key_local`,
+`S_api_key_national` and
+`B_api_key`.
 
 ### Output
 All output will be saved in the `./output`-folder. Currently, the script outputs a GeoPackage containing multiple layers, and a image.

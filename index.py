@@ -10,6 +10,7 @@ from netex import Netex
 from si_source import getNetexSI
 from nl_source import getNetexNL
 from url_source import getNetexViaURL
+from b_source import getNetexB
 from plot import plot_layer
 import sys
 
@@ -55,6 +56,12 @@ if 'FIN' in data_sources:
 if 'S' in data_sources and 'S_api_key_national' in secrets_file:
     print(f'Verwerken van Zweedse NeTEx')
     getNetexViaURL(f"https://opendata.samtrafiken.se/netex-sweden/sweden.zip?key={secrets_file['S_api_key_national']}")  
+
+if 'B' in data_sources:
+    print(f'Verwerken van Belgische NeTEx')
+    for link, content in getNetexB(secrets_file):
+        print(f'Verwerken van {link}...')
+        Netex(str_content=content)
 
 if 'INPUT' in data_sources:
     print(f'Verwerken van de inputmap')
