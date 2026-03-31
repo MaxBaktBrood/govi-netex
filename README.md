@@ -3,6 +3,8 @@ Grenzeloze openbaar vervoer informatie (GOVI) vanuit Netex. Dit script verwerkt 
 
 This script aims to provide borderless public transport information (GOVI in Dutch) from Netex-files. This script processes Netex-files and saves one detailed gpkg-file.
 
+Reach out to us by e-mail: [meldpunt@govi.nu](mailto:meldpunt@govi.nu)
+
 ## Supported/tested datasets
 This script supports reading from .zip- and .gz-files, provided in the `./input`-directory. Also, this script has built-in functionality to automatically retrieve Netex-datasets. This script aims to treat enum- and epiap-files as general data for the "real" datasets, as it is supposed to. Here's a table indicating the support for these features per dataset:
 
@@ -23,10 +25,10 @@ This script supports reading from .zip- and .gz-files, provided in the `./input`
 |[Switzerland](https://data.opentransportdata.swiss/organization/oevch?q=netex&sort=score+desc%2C+metadata_modified+desc)|All|No|No|No route data.
 |[Sweden](https://www.trafiklab.se/api/netex-datasets/netex-sweden/)|All|No|Yes, link|Api key required.
 
-## Part of the revival of GOVI
+## Part of the revival of [GOVI](https://govi.nu)
 This project is part of a bigger one. Over 15 years ago, authorities in The Netherlands founded the GOVI-organisation to ensure public transport information was distributed without limits. Today, an extensive load of public transport data is easily accessible, but the data is often limited to a specific country. To be truly limitless, public transport data should not be viewed per country.
 
-GOVI changed it's name to DOVA. DOVA became focussed on domestic developments, while challenging the limitlessness of public transport is still important. This is why, as of April 2026, GOVI returns. This time, borderless information will be the sole goal of GOVI!
+GOVI changed it's name to DOVA. DOVA became focussed on domestic developments, while challenging the limitlessness of public transport is still important. This is why, as of April 2026, [GOVI returns](https://govi.nu). This time, borderless information will be the sole goal of GOVI!
 
 ## Usage
 Launch the script like so:
