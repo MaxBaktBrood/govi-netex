@@ -9,8 +9,8 @@ import gzip
 import requests
 
 def getNetexSI(secrets_file={}):
-    if 'SI_username' not in secrets_file: return None
-    if 'SI_password' not in secrets_file: return None
+    if 'SI_username' not in secrets_file: return []
+    if 'SI_password' not in secrets_file: return []
 
     acces_token_request = requests.post("https://b2b.nap.si/uc/user/token", data={
         'grant_type':'password',
