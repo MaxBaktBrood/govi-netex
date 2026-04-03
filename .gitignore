@@ -3,3 +3,4 @@ xsd/**
 secrets.json
 netex.gpkg
 __pycache__/**
+gld_input/**
