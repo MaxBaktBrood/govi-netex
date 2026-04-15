@@ -22,6 +22,13 @@ class Netex:
             mode_of_transport_el = line.find('./n:TransportMode', self.ns)
             if mode_of_transport_el is not None:
                 route_data['mode_of_transport'] = mode_of_transport_el.text
+                if 'translate_to_dutch' in self.options and self.options['translate_to_dutch'] is True:
+                    match route_data['mode_of_transport']:
+                        case 'bus': route_data['mode_of_transport'] = 'bus'
+                        case 'rail': route_data['mode_of_transport'] = 'trein'
+                        case 'tram': route_data['mode_of_transport'] = 'tram'
+                        case 'metro': route_data['mode_of_transport'] = 'metro'
+                        case 'water': route_data['mode_of_transport'] = 'water'
             
             line_number_el = line.find('./n:PublicCode', self.ns)
             if line_number_el is not None:
@@ -103,6 +110,7 @@ class Netex:
                                     for compositeFrame in compositeFrames:
                                         area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
                                         if area_el is not None:
+                                            route_data['network_id'] = area_el.attrib['id']
                                             name = area_el.find('./n:Name', self.ns)
                                             if name is not None:
                                                 route_data['network'] = name.text
@@ -111,7 +119,8 @@ class Netex:
                                                 route_data['network_code'] = code.text
 
                             if route_data['network'] is None:
-                                route_data['Network'] = area.attrib['ref']
+                                route_data['network'] = area.attrib['ref']
+                                route_data['network_id'] = area.attrib['ref']
         
             return route_data
 
@@ -255,6 +264,7 @@ class Netex:
                     'authority_code':None,
                     'operator':None,
                     'operator_code':None,
+                    "network_id":None,
                     'network':None,
                     'network_code':None,
                 }
@@ -328,9 +338,41 @@ class Netex:
             if line_ref_el is not None: line_ref = line_ref_el.attrib['ref']
             line = service.find(f"./n:lines/n:Line[@id='{line_ref}']", self.ns)
 
+            if line_ref_el is None: print('Geen lijn')
+
             points = route.find('./n:pointsInSequence', self.ns)
 
             if points is None: continue
+
+            route_data = {
+                'id':route.attrib['id'],
+                'line_id':None,
+                'mode_of_transport':None,
+                'line_number':None,
+                'line_name':None,
+                'line_code':None,
+                'direction':None,
+                'formula':None,
+                'authority':None,
+                'authority_code':None,
+                'operator':None,
+                'operator_code':None,
+                'network':None,
+                'network_id':None,
+                'network_code':None,
+            }
+            
+
+            if line is not None:
+                route_data = line_information(line, route_data)
+
+            if 'network_inclusions' in self.options:
+                if route_data['network_id'] not in self.options['network_inclusions']:
+                    continue
+            
+            if 'network_exclutions' in self.options:
+                if route_data['network_id'] in self.options['network_exclutions']:
+                    continue
 
             line_geodata = {
                 "type": "Feature",
@@ -407,30 +449,14 @@ class Netex:
                                 if line_string is not None:
                                     line_string_data = pygml.parse(ET.tostring(line_string))
                                     line_geodata['geometry']['coordinates'].append(dict(line_string_data.__geo_interface__)['coordinates'])
-                    
-            route_data = {
-                'id':route.attrib['id'],
-                'line_id':None,
-                'mode_of_transport':None,
-                'line_number':None,
-                'line_name':None,
-                'line_code':None,
-                'direction':None,
-                'formula':None,
-                'authority':None,
-                'authority_code':None,
-                'operator':None,
-                'operator_code':None,
-                'network':None,
-                'network_code':None,
-            }
-
-            if line is not None:
-                route_data = line_information(line, route_data)
             
             direction_el = route.find('./n:DirectionType', self.ns)
             if direction_el is not None:
                 route_data['direction'] = direction_el.text
+                if 'translate_to_dutch' in self.options and self.options['translate_to_dutch'] is True:
+                    match route_data['direction']:
+                        case 'outbound': route_data['direction'] = 'uitgaand'
+                        case 'inbound': route_data['direction'] = 'inkomend'
                 
             line_geodata['properties'] = route_data
             points_geodata['properties'] = route_data
