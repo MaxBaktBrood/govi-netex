@@ -475,7 +475,35 @@ class Netex:
         
         return
 
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, crs='wgs84'):
+    # def getEpiapQuay(self, ref:str, epiap_list:list[ET.Element]=[]):
+    #     for epiap in epiap_list:
+    #         quay = epiap.find(f".//n:Quay[@id='{ref}']", self.ns)
+    #         if quay is None:
+    #           quay = epiap.find(f".//n:Quay[@id='{ref}']/n:privateCodes[n:PrivateCode='{ref}']", self.ns) 
+    #           if quay is not None: quay = quay.find('..')
+    #         if quay is not None:
+    #             codeEl = quay.find('../../n:privateCodes/PrivateCode', self.ns)
+    #             stopplaceCode = None
+    #             if codeEl is not None: stopplaceCode = codeEl.text
+    #             name = quay.find('../../n:Name', self.ns)
+
+    #             gml = quay.find("./{gml}*", self.ns)
+    #             if gml is None: gml = gml = quay.find("./n:Centroid/n:Location/gml:pos", self.ns)
+
+    #             if gml is not None:
+    #                 if gml.tag == 'gml:pos':
+    #                     location = list(pygml.basics.parse_pos(gml.text))
+    #                 else:
+    #                     location = pygml.parse(gml)
+    #             else:
+    #                 lng = quay.find('./n:Location/n:Longitude', self.ns)
+    #                 lat = quay.find('./n:Location/n:Latitude', self.ns)
+
+    #                 if lng is not None and lat is not None:
+    #                     location = [lng.text, lat.text]
+    #     pass
+    
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, crs='wgs84'):
         journeys = timetable.find('./n:vehicleJourneys', self.ns)
         patterns = service.find('./n:journeyPatterns', self.ns)
         time_demand_types = service.find('./n:timeDemandTypes', self.ns)
@@ -484,6 +512,24 @@ class Netex:
         stop_areas = service.find('./n:stopAreas', self.ns)
         availability_conditions = timetable.find('./n:contentValidityConditions', self.ns)
 
+        def quay_stoppoint_assigner(el: ET.Element):
+            stoppoint_el = el.find(f'./n:ScheduledStopPointRef', self.ns)
+            stoppoint = None
+            if stoppoint_el is not None and 'ref' in stoppoint_el.attrib: stoppoint = stoppoint_el.attrib['ref']
+            quay_el = el.find(f'./n:QuayRef', self.ns)
+            quay = None
+            if quay_el is not None and 'ref' in quay_el.attrib: quay = quay_el.attrib['ref'].replace(
+                'NL:CHB:quay:','NL:Q:'
+            ).replace(
+                'NL:CHB:Quay:','NL:Q:'
+            )
+
+            if stoppoint is None and quay is None: raise Exception()
+            return (stoppoint, quay)
+
+        quays_per_stoppoint = dict(map(
+            quay_stoppoint_assigner, service.findall(f'./n:stopAssignments/n:PassengerStopAssignment', self.ns)
+        ))
 
         stop_points_geodata = {
             "type": "FeatureCollection",
@@ -503,14 +549,196 @@ class Netex:
             journey_data = {
                 'id':journey.attrib['id'],
                 'route':None,
+                'line_id':None,
                 'available_from':None,
                 'available_through':None,
                 'available_day_bits':None,
                 'in_scope_of_operator':None,
                 'number':None,
                 'distance':0,
-                'direction':None
+                'direction':None,
+                'line_name':None,
+                'line_number':None,
+                'network':None,
+                'network_id':None,
+                'network_code':None,
             }
+
+            pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
+            if pattern_ref is not None and patterns is not None:
+                pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref.attrib['ref']}"]', self.ns)
+                if pattern is not None:
+                    routeref_el = pattern.find('./n:RouteRef', self.ns)
+                    if routeref_el is not None:
+                        routeref = routeref_el.attrib['ref']
+                        journey_data['route'] = routeref
+                        line_ref_el = service.find(f'./n:routes/n:Route[@id="{routeref_el.attrib['ref']}"]/n:LineRef', self.ns)
+                        if line_ref_el is not None and 'ref' in line_ref_el.attrib:
+                            journey_data['line_id'] = line_ref_el.attrib['ref']
+                            line = service.find(f'./n:lines/n:Line[@id="{journey_data['line_id']}"]', self.ns)
+                            if line is not None:
+                                line_name = None
+                                line_number = None
+                                
+                                line_number_el = line.find('./n:PublicCode', self.ns)
+                                if line_number_el is not None:
+                                    line_number = line_number_el.text
+                                    line_name = line_number_el.text
+                                
+                                line_name_el = line.find('./n:Name', self.ns)
+                                if line_name_el is not None:
+                                    if line_name:
+                                        line_name += f" {line_name_el.text}"
+                                    else: line_name = line_name_el.text
+
+                                journey_data['line_name'] = line_name
+                                journey_data['line_number'] = line_number
+                            
+                                if 'responsibilitySetRef' in line.attrib:
+                                    responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
+                                    if responsibility_el is not None:
+                                        for role in responsibility_el:
+                                            roletypes = role.find('./n:StakeholderRoleType', self.ns)
+                                            organisation = role.find('./n:StakeholderRoleType', self.ns)
+
+                                            if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
+                                                area = role.find('./n:ResponsibleAreaRef', self.ns)
+
+                                                if area is not None and enum_list is not None:
+                                                    for enum in enum_list:
+                                                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                                                        for compositeFrame in compositeFrames:
+                                                            area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
+                                                            if area_el is not None:
+                                                                journey_data['network_id'] = area_el.attrib['id']
+                                                                name = area_el.find('./n:Name', self.ns)
+                                                                if name is not None:
+                                                                    journey_data['network'] = name.text
+                                                                code = area_el.find('./n:ShortName', self.ns)
+                                                                if code is not None:
+                                                                    journey_data['network_code'] = code.text
+
+                                                if journey_data['network'] is None:
+                                                    journey_data['network'] = area.attrib['ref']
+                                                    journey_data['network_id'] = area.attrib['ref']
+
+                    if 'network_inclusions' in self.options:
+                        if journey_data['network_id'] not in self.options['network_inclusions']:
+                            continue
+                    
+                    if 'network_exclutions' in self.options:
+                        if journey_data['network_id'] in self.options['network_exclutions']:
+                            continue
+
+                    direction_el = pattern.find('./n:DirectionType', self.ns)
+                    if direction_el is not None:
+                        direction = direction_el.text
+                        journey_data['direction'] = direction
+
+                    for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
+                        timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
+                        if timing_link_ref is not None and timing_links is not None:
+                            ref = timing_link_ref.attrib['ref']
+                            timing_link = timing_links.find(f'./n:TimingLink[@id="{ref}"]', self.ns)
+                            distance_el = timing_link.find('./n:Distance', self.ns)
+                            if distance_el is not None:
+                                distance = float(distance_el.text)
+                                journey_data['distance'] += distance
+
+                        
+                        stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
+                        quay = None
+
+                        if stoppoint_ref is not None and 'ref' in stoppoint_ref.attrib:
+                            if stoppoint_ref.attrib['ref'] in quays_per_stoppoint:
+                                quay = quays_per_stoppoint[stoppoint_ref.attrib['ref']]
+
+                        # passenger_stop_assignment = service.find(f'./n:stopAssignments/n:PassengerStopAssignment/n:ScheduledStopPointRef[@ref="{stoppoint_ref.attrib['ref']}"]/..', self.ns)
+                        # if passenger_stop_assignment is not None:
+                        #     quay_el = passenger_stop_assignment.find('./n:QuayRef', self.ns)
+                        #     if quay_el is not None and 'ref' in quay_el.attrib:
+                        #         quay = quay_el.attrib['ref'].upper().replace('NL:CHB:QUAY:','NL:Q:')
+                        #     else:
+                        #         print('Geen quay voor ' + stoppoint_ref.attrib['ref'])
+                        # else: print('Geen PSA voor ' + stoppoint_ref.attrib['ref'])
+                        
+                        
+                        point_id = None
+                        if quay: point_id = quay
+                        else: point_id = stoppoint_ref.attrib['ref']
+
+                        if stoppoint_ref is not None and stop_points is not None:  
+                            stop_point: ET.Element = stop_points.find(f'./n:ScheduledStopPoint[@id="{stoppoint_ref.attrib['ref']}"]', self.ns)
+                            if stop_point is not None:
+                                if point_id not in stop_points_geodata['features']:
+                                    point_geodata = {
+                                        "type": "Feature",
+                                        "geometry": {
+                                            "type": "MultiPoint",
+                                            "coordinates": []
+                                        },
+                                        "properties":{
+                                            # "id":stop_point.attrib['id'],
+                                            "quay":quay,
+                                            "name":None,
+                                            "line_numbers":set(),
+                                            "lines":set(),
+                                            "stopplace_name":None,
+                                            "stopplace_public_name":None,
+                                            "stopplace_code":None,
+                                            "place":None
+                                        }
+                                    }
+
+                                    stop_point_name = stop_point.find("./n:Name", self.ns)
+                                    if stop_point_name is not None:
+                                        point_geodata['properties']['name'] = stop_point_name.text
+
+                                    stop_area_ref_el = stop_point.find("./n:stopAreas/n:StopAreaRef", self.ns)
+                                    if stop_area_ref_el is not None:
+                                        ref = stop_area_ref_el.attrib['ref']
+                                        stop_area = stop_areas.find(f'./n:StopArea[@id="{ref}"]', self.ns)
+                                        if stop_area is not None:
+                                            name_el = stop_area.find("./n:Name", self.ns)
+                                            if name_el is not None: 
+                                                point_geodata['properties']['stopplace_name'] = name_el.text
+
+                                            public_name_el = stop_area.find("./n:Name", self.ns)
+                                            if public_name_el is not None: 
+                                                point_geodata['properties']['stopplace_public_name'] = public_name_el.text
+
+                                            code_el = stop_area.find("./n:privateCodes/n:PrivateCode[@type='UserStopAreaCode']", self.ns)
+                                            if code_el is not None: point_geodata['properties']['stopplace_code'] = code_el.text
+
+                                            place_el = stop_area.find("./n:TopographicPlaceView/n:Name", self.ns)
+                                            if place_el is not None: point_geodata['properties']['place'] = place_el.text
+
+                            
+                                    stop_points_geodata['features'].setdefault(point_id, point_geodata)
+
+                                stop_point_location = stop_point.find("./n:Location", self.ns)
+
+                                if stop_point_location is not None:
+                                    gml = stop_point_location.find("./gml:pos", self.ns)
+                                    location = None
+
+                                    if gml is not None:
+                                        location = list(pygml.basics.parse_pos(gml.text))
+                                    else:
+                                        lng = stop_point_location.find('./n:Longitude', self.ns)
+                                        lat = stop_point_location.find('./n:Latitude', self.ns)
+
+                                        if lng is not None and lat is not None:
+                                            location = [lng.text, lat.text]
+
+                                    if location not in stop_points_geodata['features'][point_id]['geometry']['coordinates']:
+                                        stop_points_geodata['features'][point_id]['geometry']['coordinates'].append(location)
+
+                        if journey_data['line_number'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["line_numbers"].add(journey_data['line_number'])
+                        if journey_data['line_name'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["lines"].add(journey_data['line_name'])
+
 
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
@@ -536,120 +764,6 @@ class Netex:
             realtime_info_el = journey.find(f'./n:Monitored', self.ns)
             if realtime_info_el: journey['realtime_info'] = (realtime_info_el.text == 'true')
 
-            pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
-            if pattern_ref is not None and patterns is not None:
-                pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref.attrib['ref']}"]', self.ns)
-                if pattern is not None:
-                    routeref_el = pattern.find('./n:RouteRef', self.ns)
-                    if routeref_el is not None:
-                        routeref = routeref_el.attrib['ref']
-                        journey_data['route'] = routeref
-                    
-                    direction_el = pattern.find('./n:DirectionType', self.ns)
-                    if direction_el is not None:
-                        direction = direction_el.text
-                        journey_data['direction'] = direction
-
-                    for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
-                        timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
-                        if timing_link_ref is not None and timing_links is not None:
-                            ref = timing_link_ref.attrib['ref']
-                            timing_link = timing_links.find(f'./n:TimingLink[@id="{ref}"]', self.ns)
-                            distance_el = timing_link.find('./n:Distance', self.ns)
-                            if distance_el is not None:
-                                distance = float(distance_el.text)
-                                journey_data['distance'] += distance
-
-                        
-                        stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
-                        if stoppoint_ref is not None and stop_points is not None and stoppoint_ref.attrib['ref'] not in stop_points_geodata['features']:
-                            stop_point: ET.Element = stop_points.find(f'./n:ScheduledStopPoint[@id="{stoppoint_ref.attrib['ref']}"]', self.ns)
-
-                            if stop_point is not None:
-                                point_id = None
-                                if 'id' in stop_point.attrib:
-                                    point_id = stop_point.attrib['id']
-                                point_geodata = {
-                                    "type": "Feature",
-                                    "geometry": {
-                                        "type": "Point",
-                                        "coordinates": []
-                                    },
-                                    "properties":{
-                                        "id":point_id,
-                                        "name":None,
-                                        "line_numbers":set(),
-                                        "lines":set(),
-                                        "stopplace_name":None,
-                                        "stopplace_public_name":None,
-                                        "stopplace_code":None,
-                                        "place":None
-                                    }
-                                }
-
-                                stop_point_location = stop_point.find("./n:Location", self.ns)
-
-                                if stop_point_location is not None:
-                                    gml = stop_point_location.find("./gml:pos", self.ns)
-
-                                    if gml is not None:
-                                        point_geodata['geometry']['coordinates'] = list(pygml.basics.parse_pos(gml.text))
-                                    else:
-                                        lng = stop_point_location.find('./n:Longitude', self.ns)
-                                        lat = stop_point_location.find('./n:Latitude', self.ns)
-
-                                        if lng is not None and lat is not None:
-                                            point_geodata['geometry']['coordinates'] = [lng.text, lat.text]
-
-                                stop_point_name = stop_point.find("./n:Name", self.ns)
-                                if stop_point_name is not None:
-                                    point_geodata['properties']['name'] = stop_point_name.text
-
-                                stop_area_ref_el = stop_point.find("./n:stopAreas/n:StopAreaRef", self.ns)
-                                if stop_area_ref_el is not None:
-                                    ref = stop_area_ref_el.attrib['ref']
-                                    stop_area = stop_areas.find(f'./n:StopArea[@id="{ref}"]', self.ns)
-                                    if stop_area is not None:
-                                        name_el = stop_area.find("./n:Name", self.ns)
-                                        if name_el is not None: 
-                                            point_geodata['properties']['stopplace_name'] = name_el.text
-
-                                        public_name_el = stop_area.find("./n:Name", self.ns)
-                                        if public_name_el is not None: 
-                                            point_geodata['properties']['stopplace_public_name'] = public_name_el.text
-
-                                        code_el = stop_area.find("./n:privateCodes/n:PrivateCode[@type='UserStopAreaCode']", self.ns)
-                                        if code_el is not None: point_geodata['properties']['stopplace_code'] = code_el.text
-
-                                        place_el = stop_area.find("./n:TopographicPlaceView/n:Name", self.ns)
-                                        if place_el is not None: point_geodata['properties']['place'] = place_el.text
-
-                        
-                                stop_points_geodata['features'].setdefault(point_id, point_geodata)
-
-                        route_ref_el = pattern.find('./n:RouteRef', self.ns)
-                        if route_ref_el is not None and 'ref' in route_ref_el.attrib:
-                            line_ref_el = service.find(f'./n:routes/n:Route[@id="{route_ref_el.attrib['ref']}"]/n:LineRef', self.ns)
-                            if line_ref_el is not None and 'ref' in line_ref_el.attrib:
-                                line = service.find(f'./n:lines/n:Line[@id="{line_ref_el.attrib['ref']}"]', self.ns)
-                                if line is not None:
-                                    line_name = None
-                                    line_number = None
-                                    
-                                    line_number_el = line.find('./n:PublicCode', self.ns)
-                                    if line_number_el is not None:
-                                        line_number = line_number_el.text
-                                        line_name = line_number_el.text
-                                    
-                                    line_name_el = line.find('./n:Name', self.ns)
-                                    if line_name_el is not None:
-                                        if line_name:
-                                            line_name += f" {line_name_el.text}"
-                                        else: line_name = line_name_el.text
-
-                                    stop_points_geodata['features'][stoppoint_ref.attrib['ref']]["properties"]["line_numbers"].add(line_number)
-                                    stop_points_geodata['features'][stoppoint_ref.attrib['ref']]["properties"]["lines"].add(line_name)
-
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
             # if time_demand_type_ref is not None and time_demand_types is not None:
             #     ref = time_demand_type_ref.attrib['ref']
@@ -664,6 +778,8 @@ class Netex:
         
         stop_points_geodata['features'] = list(map(modifyFeature, stop_points_geodata['features']))
 
+        if len(stop_points_geodata['features']) == 0: return
+
         stop_points_gdf = geopandas.GeoDataFrame.from_features(
             features=stop_points_geodata
         ).set_crs(crs)
@@ -671,6 +787,7 @@ class Netex:
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
 
+    colnames = {}
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
         if file is None and str_content is None:
@@ -717,6 +834,9 @@ class Netex:
             if service is None: continue
 
             self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
-            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, crs=df_crs)
+
+            if timetable is None: continue
+
+            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
 
         return
