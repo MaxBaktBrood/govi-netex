@@ -16,8 +16,8 @@ class Netex:
     def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
         routes = service.find('./n:routes', self.ns)
 
-        def line_information(line: ET.Element, route_data={}) -> {}:
-            route_data['id'] = line.attrib['id']
+        def line_information(line: ET.Element, route_data={}) -> dict:
+            route_data['line_id'] = line.attrib['id']
 
             mode_of_transport_el = line.find('./n:TransportMode', self.ns)
             if mode_of_transport_el is not None:
@@ -31,7 +31,7 @@ class Netex:
             if line_name_el is not None:
                 route_data['line_name'] = line_name_el.text
             
-            line_code_el = line.find('./n:privateCodes/n:PrivateCode', self.ns)
+            line_code_el = line.find('.//n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
             if line_code_el is not None:
                 route_data['line_code'] = line_code_el.text
 
@@ -94,7 +94,7 @@ class Netex:
                         roletypes = role.find('./n:StakeholderRoleType', self.ns)
                         organisation = role.find('./n:StakeholderRoleType', self.ns)
 
-                        if roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' '):
+                        if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
                             area = role.find('./n:ResponsibleAreaRef', self.ns)
 
                             if area is not None and enum_list is not None:
@@ -309,7 +309,7 @@ class Netex:
         for route in routes:
             line_ref_el = route.find('./n:LineRef', self.ns)
             line_ref = None
-            if line_ref_el: line_ref = line_ref_el.attrib['ref']
+            if line_ref_el is not None: line_ref = line_ref_el.attrib['ref']
             line = service.find(f"./n:lines/n:Line[@id='{line_ref}']", self.ns)
 
             points = route.find('./n:pointsInSequence', self.ns)
@@ -498,7 +498,7 @@ class Netex:
             if pattern_ref is not None and patterns is not None:
                 pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref.attrib['ref']}"]', self.ns)
                 if pattern is not None:
-                    routeref_el = pattern.find('./RouteRef', self.ns)
+                    routeref_el = pattern.find('./n:RouteRef', self.ns)
                     if routeref_el is not None:
                         routeref = routeref_el.attrib['ref']
                         journey_data['route'] = routeref
