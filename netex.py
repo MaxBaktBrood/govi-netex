@@ -193,6 +193,14 @@ class Netex:
 
                 if line is not None:
                     route_data = line_information(line, route_data)
+
+                if 'network_witelist' in self.options:
+                    if route_data['network_id'] not in self.options['network_inclusions']:
+                        continue
+                
+                if 'network_exclutions' in self.options:
+                    if route_data['network_id'] in self.options['network_exclutions']:
+                        continue
                 
                 # For Germany useless here
                 direction_el = pattern.find('./n:DirectionType', self.ns)
@@ -292,6 +300,14 @@ class Netex:
 
                 if line is not None:
                     route_data = line_information(line, route_data)
+                
+                if 'network_inclusions' in self.options:
+                    if route_data['network_id'] not in self.options['network_inclusions']:
+                        continue
+                
+                if 'network_exclutions' in self.options:
+                    if route_data['network_id'] in self.options['network_exclutions']:
+                        continue
 
                 line_geodata['properties'] = route_data
 
@@ -630,8 +646,7 @@ class Netex:
 
 
 
-
-    def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None):
+    def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
         if file is None and str_content is None:
             raise Exception('File or string required')
 
@@ -656,6 +671,8 @@ class Netex:
             'n':'http://www.netex.org.uk/netex',
             'gml':"http://www.opengis.net/gml/3.2"
         }
+
+        if options: self.options = options
 
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
