@@ -10,6 +10,7 @@ from netex import Netex
 import sys
 import sqlite3
 from fudgeo import GeoPackage
+from epiap import Epiap
 
 # Netex processing for the province of Gelderland
 
@@ -62,6 +63,9 @@ for file in os.listdir(general_folder):
             epiap_contents.append(content)
         else:
             enum_contents.append(content)
+
+if epiap_contents is not None:
+    epiap_contents = list(map(lambda x: Epiap(None, x), epiap_contents))
 
 for file in os.listdir(data_folder):
     split_path = os.path.splitext(file)

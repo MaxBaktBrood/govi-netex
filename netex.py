@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import gzip
 import requests
 import typing
+from epiap import Epiap
 
 output_folder = './output'
 
@@ -503,7 +504,7 @@ class Netex:
     #                     location = [lng.text, lat.text]
     #     pass
     
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, crs='wgs84'):
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, epiap_list:list[Epiap]|None=None, crs='wgs84'):
         journeys = timetable.find('./n:vehicleJourneys', self.ns)
         patterns = service.find('./n:journeyPatterns', self.ns)
         time_demand_types = service.find('./n:timeDemandTypes', self.ns)
@@ -683,9 +684,10 @@ class Netex:
                                             "name":None,
                                             "line_numbers":set(),
                                             "lines":set(),
+                                            "stopplace":None,
                                             "stopplace_name":None,
                                             "stopplace_public_name":None,
-                                            "stopplace_code":None,
+                                            "stopplace_code_carrier":None,
                                             "place":None
                                         }
                                     }
@@ -708,12 +710,16 @@ class Netex:
                                                 point_geodata['properties']['stopplace_public_name'] = public_name_el.text
 
                                             code_el = stop_area.find("./n:privateCodes/n:PrivateCode[@type='UserStopAreaCode']", self.ns)
-                                            if code_el is not None: point_geodata['properties']['stopplace_code'] = code_el.text
+                                            if code_el is not None: point_geodata['properties']['stopplace_code_carrier'] = code_el.text
 
                                             place_el = stop_area.find("./n:TopographicPlaceView/n:Name", self.ns)
                                             if place_el is not None: point_geodata['properties']['place'] = place_el.text
 
-                            
+                                    if epiap_list:
+                                        for epiap in epiap_list:
+                                            if quay in epiap.stopplaces_per_quay:
+                                                point_geodata['properties']['stopplace'] = epiap.stopplaces_per_quay[quay]
+
                                     stop_points_geodata['features'].setdefault(point_id, point_geodata)
 
                                 stop_point_location = stop_point.find("./n:Location", self.ns)
@@ -802,9 +808,6 @@ class Netex:
         else:
             tree = ET.fromstring(str_content)
             self.root = tree
-
-        if epiap_list is not None:
-            epiap_list = list(map(lambda x: ET.fromstring(x), epiap_list))
         
         if enum_list is not None:
             enum_list = list(map(lambda x: ET.fromstring(x), enum_list))
@@ -837,6 +840,6 @@ class Netex:
 
             if timetable is None: continue
 
-            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
+            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list, crs=df_crs)
 
         return
