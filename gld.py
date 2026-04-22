@@ -110,9 +110,10 @@ aliasses = {
         "name":'perronnaam',
         "line_numbers":'lijnnummers',
         "lines":'lijnnamen',
+        'stopplace':'haltegroepcode',
         "stopplace_name":'haltegroepnaam',
         "stopplace_public_name":'haltegroepnaam_publiek',
-        "stopplace_code":'haltegroepcode',
+        "stopplace_code_carrier":'haltegroepcode_vervoerder',
         "place":'plaatsnaam'
     }
 
