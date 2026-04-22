@@ -31,6 +31,48 @@ class Netex:
                         case 'metro': route_data['mode_of_transport'] = 'metro'
                         case 'water': route_data['mode_of_transport'] = 'water'
             
+            sub_modes_of_transport = line.findall('./n:TransportSubmode/*', self.ns)
+            route_data['sub_mode_of_transport'] = ", ".join(
+                map(
+                    lambda x: x.text,
+                    sub_modes_of_transport
+                )
+            )
+            if 'translate_to_dutch' in self.options:
+                dutch_modes = []
+                for mode_el in sub_modes_of_transport:
+                    match mode_el.text:
+                        case 'localBus': dutch_modes.append('Buurtbus')
+                        case 'regionalBus': dutch_modes.append('Streekbus')
+                        case 'expressBus': dutch_modes.append('Snelbus')
+                        case 'nightBus': dutch_modes.append('Nachtbus')
+                        case 'mobilityBus': dutch_modes.append('Rolstoelbus')
+                        case 'shuttleBus': dutch_modes.append('Pendelbus')
+                        case 'highFrequencyBus': dutch_modes.append('Hoge frequentie')
+                        case 'schoolBus': dutch_modes.append('Scholierenlijn')
+                        case 'schoolAndPublicServiceBus': dutch_modes.append('Scholierenlijn')
+                        case 'railReplacementBus': dutch_modes.append('Bus in plaats van trein')
+                        case 'demandAndResponseBus': dutch_modes.append('Reserveerbus')
+                        case 'unknown': dutch_modes.append('Onbekend')
+                        case 'undefined': dutch_modes.append('Niet gespecificeerd')
+                        case 'local': dutch_modes.append('Stoptrein')
+                        case 'highSpeedRail': dutch_modes.append('Hogesnelheidstrein')
+                        # case 'suburbanRailway': dutch_modes.append('')
+                        case 'regionalRail': dutch_modes.append('Sneltrein')
+                        case 'longDistance': dutch_modes.append('Intercity')
+                        case 'international': dutch_modes.append('Internationale trein')
+                        case 'specialTrain': dutch_modes.append('Speciale trein')
+                        case 'metro': dutch_modes.append('Metro')
+                        # case 'urbanRailway': dutch_modes.append('')
+                        # case 'cityTram': dutch_modes.append('')
+                        # case 'localTram': dutch_modes.append('')
+                        case 'regionalTram': dutch_modes.append('Sneltram')
+                        # case 'trainTram': dutch_modes.append('')
+                        # case 'localCarFerry': dutch_modes.append('')
+                        case 'localPassengerFerry': dutch_modes.append('Watertaxi')
+                        case 'riverBus': dutch_modes.append('Waterbus')
+                route_data['sub_mode_of_transport'] = ", ".join(dutch_modes)            
+
             line_number_el = line.find('./n:PublicCode', self.ns)
             if line_number_el is not None:
                 route_data['line_number'] = line_number_el.text
@@ -122,7 +164,22 @@ class Netex:
                             if route_data['network'] is None:
                                 route_data['network'] = area.attrib['ref']
                                 route_data['network_id'] = area.attrib['ref']
-        
+            
+            type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
+            if type_of_service_ref_el is not None:
+                type_of_service_ref = type_of_service_ref_el.attrib['ref']
+
+                if enum_list is not None:
+                    for enum in enum_list:
+                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                        for compositeFrame in compositeFrames:
+                            type_of_service_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService[@id='{type_of_service_ref}']", self.ns)
+                            if type_of_service_el is not None:
+                                name = type_of_service_el.find('./n:Name', self.ns)
+                                if name is not None:
+                                    route_data['type_of_service'] = name.text
+
+
             return route_data
 
         # fallback 1: GERMANY
@@ -149,6 +206,7 @@ class Netex:
                     'id':None,
                     'line_id':None,
                     'mode_of_transport':None,
+                    'sub_mode_of_transport':None,
                     'line_number':None,
                     'line_name':None,
                     'line_code':None,
@@ -160,6 +218,7 @@ class Netex:
                     'operator_code':None,
                     'network':None,
                     'network_code':None,
+                    'type_of_service':None,
                 }
 
                 line_ref_el = pattern.find('./n:RouteView/n:LineRef', self.ns)

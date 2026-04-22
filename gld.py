@@ -78,7 +78,10 @@ for file in os.listdir(data_folder):
         
         file = gzip.open(path, 'r')
         content = file.read()
-        netex = Netex(str_content=content, epiap_list=epiap_contents, enum_list=enum_contents, options={"network_inclusions":network_inclusions, "translate_to_dutch":True})
+        netex = Netex(str_content=content, epiap_list=epiap_contents, enum_list=enum_contents, options={
+            "network_inclusions":network_inclusions, 
+            "translate_to_dutch":True
+        })
 
 
 gpkg = GeoPackage('./output/netex.gpkg')
