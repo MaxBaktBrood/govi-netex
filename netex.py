@@ -85,6 +85,10 @@ class Netex:
             if line_code_el is not None:
                 route_data['line_code'] = line_code_el.text
 
+            if route_data['line_code'] and 'linecode_categories' in self.options:
+                if str(route_data['line_code']) in self.options['linecode_categories']:
+                    route_data['custom_category'] = self.options['linecode_categories'][str(route_data['line_code'])]
+
             branding_ref_el = line.find('./n:BrandingRef', self.ns)
             if branding_ref_el is not None and resource is not None:
                 branding_ref = branding_ref_el.attrib['ref']

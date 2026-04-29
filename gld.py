@@ -11,6 +11,7 @@ import sys
 import sqlite3
 from fudgeo import GeoPackage
 from epiap import Epiap
+import pandas as pd
 
 # Netex processing for the province of Gelderland
 
@@ -67,6 +68,12 @@ for file in os.listdir(general_folder):
 if epiap_contents is not None:
     epiap_contents = list(map(lambda x: Epiap(None, x), epiap_contents))
 
+linecode_categories = {}
+
+if os.path.exists(f'{non_netex_folder}/abc-lijnen.xlsx'):
+    print('Inladen ABC-categorieën')
+    linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').astype("str").set_index('code')["ABC-Category"].to_dict()
+
 for file in os.listdir(data_folder):
     split_path = os.path.splitext(file)
 
@@ -80,7 +87,8 @@ for file in os.listdir(data_folder):
         content = file.read()
         netex = Netex(str_content=content, epiap_list=epiap_contents, enum_list=enum_contents, options={
             "network_inclusions":network_inclusions, 
-            "translate_to_dutch":True
+            "translate_to_dutch":True,
+            'linecode_categories':linecode_categories
         })
 
 
@@ -106,6 +114,7 @@ aliasses = {
         'network':'concessie',
         'network_id':'concessie_id',
         'network_code':'concessie_code',
+        'custom_category':'abc-categorie'
     },
     'scheduled_stop_points':{
         # "id":stop_point.attrib['id'],
