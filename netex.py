@@ -141,6 +141,12 @@ class Netex:
                     code_el = operator_el.find('./n:ShortName', self.ns)
                     if code_el is not None: route_data['operator_code'] = code_el.text
 
+            if route_data['operator'] is None and 'datasource' in self.defaults:
+                route_data['operator'] = self.defaults['datasource']
+
+            if route_data['operator_code'] is None and 'datasource_code' in self.defaults:
+                route_data['operator_code'] = self.defaults['datasource_code']
+
             if 'responsibilitySetRef' in line.attrib:
                 responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
                 if responsibility_el is not None:
