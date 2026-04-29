@@ -856,7 +856,10 @@ class Netex:
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
 
-    colnames = {}
+    defaults = {
+        'datasource':None,
+        'datasource_code':None
+    }
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
         if file is None and str_content is None:
@@ -891,6 +894,20 @@ class Netex:
             timetable = compositeFrame.find('./n:frames/n:TimetableFrame', self.ns)
             serviceCalendar = compositeFrame.find('./n:frames/n:ServiceCalendarFrame', self.ns)
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
+
+            defualts = compositeFrame.find('./n:FrameDefaults', self.ns)
+            if defualts is not None:
+                def_datasource_el = defualts.find('./n:DefaultDataSourceRef', self.ns)
+                if def_datasource_el is not None and 'ref' in def_datasource_el.attrib and resource is not None:
+                    datasource_el = resource.find(f'./n:dataSources/n:DataSource[@id="{def_datasource_el.attrib['ref']}"]', self.ns)
+                    if datasource_el is not None:
+                        name_el = datasource_el.find('./n:Name', self.ns)
+                        if name_el:
+                            self.defaults['datasource'] = name_el.text
+
+                        short_name_el = datasource_el.find('./n:ShortName', self.ns)
+                        if short_name_el:
+                            self.defaults['datasource_code'] = short_name_el.text
 
             df_crs = 'wgs84'
             found_crs = compositeFrame.find('./n:FrameDefaults/n:DefaultLocationSystem', self.ns)
