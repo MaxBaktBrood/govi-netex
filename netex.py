@@ -841,8 +841,8 @@ class Netex:
         stop_points_geodata['features'] = list(stop_points_geodata['features'].values())
 
         def modifyFeature(x):
-            x["properties"]["line_numbers"] = list(x["properties"]["line_numbers"])
-            x["properties"]["lines"] = list(x["properties"]["lines"])
+            x["properties"]["line_numbers"] = ", ".join(list(x["properties"]["line_numbers"]))
+            x["properties"]["lines"] = " | ".join(map(lambda x: "".replace(' | ', ' \| '), list(x["properties"]["lines"])))
             return x
         
         stop_points_geodata['features'] = list(map(modifyFeature, stop_points_geodata['features']))
