@@ -12,26 +12,22 @@ from epiap import Epiap
 output_folder = './output'
 
 class Netex:
-    
+    def line_information(self, line: ET.Element, resource:ET.Element, route_data={}, enum_list:list[ET.Element]| None=None) -> dict:
+        route_data['line_id'] = line.attrib['id']
 
-    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
-        routes = service.find('./n:routes', self.ns)
-
-        def line_information(line: ET.Element, route_data={}) -> dict:
-            route_data['line_id'] = line.attrib['id']
-
-            mode_of_transport_el = line.find('./n:TransportMode', self.ns)
-            if mode_of_transport_el is not None:
-                route_data['mode_of_transport'] = mode_of_transport_el.text
-                if 'translate_to_dutch' in self.options and self.options['translate_to_dutch'] is True:
-                    match route_data['mode_of_transport']:
-                        case 'bus': route_data['mode_of_transport'] = 'bus'
-                        case 'rail': route_data['mode_of_transport'] = 'trein'
-                        case 'tram': route_data['mode_of_transport'] = 'tram'
-                        case 'metro': route_data['mode_of_transport'] = 'metro'
-                        case 'water': route_data['mode_of_transport'] = 'water'
-            
-            sub_modes_of_transport = line.findall('./n:TransportSubmode/*', self.ns)
+        mode_of_transport_el = line.find('./n:TransportMode', self.ns)
+        if mode_of_transport_el is not None:
+            route_data['mode_of_transport'] = mode_of_transport_el.text
+            if 'translate_to_dutch' in self.options and self.options['translate_to_dutch'] is True:
+                match route_data['mode_of_transport']:
+                    case 'bus': route_data['mode_of_transport'] = 'bus'
+                    case 'rail': route_data['mode_of_transport'] = 'trein'
+                    case 'tram': route_data['mode_of_transport'] = 'tram'
+                    case 'metro': route_data['mode_of_transport'] = 'metro'
+                    case 'water': route_data['mode_of_transport'] = 'water'
+        
+        sub_modes_of_transport = line.findall('./n:TransportSubmode/*', self.ns)
+        if len(sub_modes_of_transport) > 0:
             route_data['sub_mode_of_transport'] = ", ".join(
                 map(
                     lambda x: x.text,
@@ -73,124 +69,138 @@ class Netex:
                         case 'riverBus': dutch_modes.append('Waterbus')
                 route_data['sub_mode_of_transport'] = ", ".join(dutch_modes)            
 
-            line_number_el = line.find('./n:PublicCode', self.ns)
-            if line_number_el is not None:
-                route_data['line_number'] = line_number_el.text
-            
-            line_name_el = line.find('./n:Name', self.ns)
-            if line_name_el is not None:
-                route_data['line_name'] = line_name_el.text
-            
-            line_code_el = line.find('.//n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
-            if line_code_el is not None:
-                route_data['line_code'] = line_code_el.text
+        line_number_el = line.find('./n:PublicCode', self.ns)
+        if line_number_el is not None:
+            route_data['line_number'] = line_number_el.text
+        
+        line_name_el = line.find('./n:Name', self.ns)
+        if line_name_el is not None:
+            route_data['line_name'] = line_name_el.text
+        
+        line_code_el = line.find('.//n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
+        if line_code_el is not None:
+            route_data['line_code'] = line_code_el.text
 
-            if route_data['line_code'] and 'linecode_categories' in self.options:
-                if str(route_data['line_code']) in self.options['linecode_categories']:
-                    route_data['custom_category'] = self.options['linecode_categories'][str(route_data['line_code'])]
+        if route_data['line_code'] and 'linecode_categories' in self.options:
+            if str(route_data['line_code']) in self.options['linecode_categories']:
+                route_data['custom_category'] = self.options['linecode_categories'][str(route_data['line_code'])]
+            else: route_data['custom_category'] = None
 
-            branding_ref_el = line.find('./n:BrandingRef', self.ns)
-            if branding_ref_el is not None and resource is not None:
-                branding_ref = branding_ref_el.attrib['ref']
-                branding_el = resource.find(f"./n:typesOfValue/n:Branding[@id='{branding_ref}']", self.ns)
-                if branding_el is not None:
-                    name = branding_el.find('./n:Name', self.ns)
+        branding_ref_el = line.find('./n:BrandingRef', self.ns)
+        if branding_ref_el is not None and resource is not None:
+            branding_ref = branding_ref_el.attrib['ref']
+            branding_el = resource.find(f"./n:typesOfValue/n:Branding[@id='{branding_ref}']", self.ns)
+            if branding_el is not None:
+                name = branding_el.find('./n:Name', self.ns)
+                if name is not None:
+                    route_data['formula'] = name.text
+
+        product_type_ref_el = line.find('./n:TypeOfProductCategoryRef', self.ns)
+        if product_type_ref_el is not None and resource is not None:
+            product_type_ref = product_type_ref_el.attrib['ref']
+            product_type_el = resource.find(f"./n:typesOfValue/n:TypeOfProductCategory[@id='{product_type_ref}']", self.ns)
+            if product_type_el is not None:
+                name = product_type_el.find('./n:Name', self.ns)
+                if name is not None:
+                    route_data['type_of_product'] = name.text
+
+        authority_ref_el = line.find('./n:AuthorityRef', self.ns)
+        if authority_ref_el is not None:
+            authority_ref = authority_ref_el.attrib['ref']
+
+            if enum_list is not None:
+                for enum in enum_list:
+                    compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                    for compositeFrame in compositeFrames:
+                        authority_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:Authority[@id='{authority_ref}']", self.ns)
+                        if authority_el is not None:
+                            name = authority_el.find('./n:Name', self.ns)
+                            if name is not None:
+                                route_data['authority'] = name.text
+                            code = authority_el.find('./n:ShortName', self.ns)
+                            if code is not None:
+                                route_data['authority_code'] = code.text
+            
+            if resource is not None:
+                authority_el = resource.find(f'./n:organisations/n:Authority[@id="{authority_ref}"]', self.ns)
+                if authority_el is not None:
+                    name = authority_el.find('./n:Name', self.ns)
                     if name is not None:
-                        route_data['formula'] = name.text
+                        route_data['authority'] = name.text
+                    code = authority_el.find('./n:ShortName', self.ns)
+                    if code is not None:
+                        route_data['authority_code'] = code.text
 
-            authority_ref_el = line.find('./n:AuthorityRef', self.ns)
-            if authority_ref_el is not None:
-                authority_ref = authority_ref_el.attrib['ref']
+            if route_data['authority'] is None:
+                route_data['authority'] = authority_ref
 
-                if enum_list is not None:
-                    for enum in enum_list:
-                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                        for compositeFrame in compositeFrames:
-                            authority_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:Authority[@id='{authority_ref}']", self.ns)
-                            if authority_el is not None:
-                                name = authority_el.find('./n:Name', self.ns)
-                                if name is not None:
-                                    route_data['authority'] = name.text
-                                code = authority_el.find('./n:ShortName', self.ns)
-                                if code is not None:
-                                    route_data['authority_code'] = code.text
-                
-                if resource is not None:
-                    authority_el = resource.find(f'./n:organisations/n:Authority[@id="{authority_ref}"]', self.ns)
-                    if authority_el is not None:
-                        name = authority_el.find('./n:Name', self.ns)
-                        if name is not None:
-                            route_data['authority'] = name.text
-                        code = authority_el.find('./n:ShortName', self.ns)
-                        if code is not None:
-                            route_data['authority_code'] = code.text
+        operator_ref_el = line.find('./n:OperatorRef', self.ns)
+        if operator_ref_el is None:
+            operator_ref_el = line.find('./n:additionalOperators/n:OperatorRef', self.ns) 
 
-                if route_data['authority'] is None:
-                    route_data['authority'] = authority_ref
+        if operator_ref_el is not None and resource is not None:
+            operator_ref = operator_ref_el.attrib['ref']
+            operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
+            if operator_el is not None:
+                name_el = operator_el.find('./n:Name', self.ns)
+                if name_el is not None: route_data['operator'] = name_el.text
+                code_el = operator_el.find('./n:ShortName', self.ns)
+                if code_el is not None: route_data['operator_code'] = code_el.text
 
-            operator_ref_el = line.find('./n:OperatorRef', self.ns)
-            if operator_ref_el is None:
-               operator_ref_el = line.find('./n:additionalOperators/n:OperatorRef', self.ns) 
+        if 'operator' not in route_data or route_data['operator'] is None and 'datasource' in self.defaults:
+            route_data['operator'] = self.defaults['datasource']
 
-            if operator_ref_el is not None and resource is not None:
-                operator_ref = operator_ref_el.attrib['ref']
-                operator_el = resource.find(f"./n:organisations/n:Operator[@id='{operator_ref}']", self.ns)
-                if operator_el is not None:
-                    name_el = operator_el.find('./n:Name', self.ns)
-                    if name_el is not None: route_data['operator'] = name_el.text
-                    code_el = operator_el.find('./n:ShortName', self.ns)
-                    if code_el is not None: route_data['operator_code'] = code_el.text
+        if 'operator_code' not in route_data or route_data['operator_code'] is None and 'datasource_code' in self.defaults:
+            route_data['operator_code'] = self.defaults['datasource_code']
 
-            if route_data['operator'] is None and 'datasource' in self.defaults:
-                route_data['operator'] = self.defaults['datasource']
+        if 'responsibilitySetRef' in line.attrib:
+            responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
+            if responsibility_el is not None:
+                for role in responsibility_el:
+                    roletypes = role.find('./n:StakeholderRoleType', self.ns)
+                    organisation = role.find('./n:StakeholderRoleType', self.ns)
 
-            if route_data['operator_code'] is None and 'datasource_code' in self.defaults:
-                route_data['operator_code'] = self.defaults['datasource_code']
+                    if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
+                        area = role.find('./n:ResponsibleAreaRef', self.ns)
 
-            if 'responsibilitySetRef' in line.attrib:
-                responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
-                if responsibility_el is not None:
-                    for role in responsibility_el:
-                        roletypes = role.find('./n:StakeholderRoleType', self.ns)
-                        organisation = role.find('./n:StakeholderRoleType', self.ns)
+                        if area is not None and enum_list is not None:
+                            for enum in enum_list:
+                                compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                                for compositeFrame in compositeFrames:
+                                    area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
+                                    if area_el is not None:
+                                        route_data['network_id'] = area_el.attrib['id']
+                                        name = area_el.find('./n:Name', self.ns)
+                                        if name is not None:
+                                            route_data['network'] = name.text
+                                        code = area_el.find('./n:ShortName', self.ns)
+                                        if code is not None:
+                                            route_data['network_code'] = code.text
 
-                        if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
-                            area = role.find('./n:ResponsibleAreaRef', self.ns)
+                        if route_data['network'] is None:
+                            route_data['network'] = area.attrib['ref']
+                            route_data['network_id'] = area.attrib['ref']
+        
+        type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
+        if type_of_service_ref_el is not None:
+            type_of_service_ref = type_of_service_ref_el.attrib['ref']
 
-                            if area is not None and enum_list is not None:
-                                for enum in enum_list:
-                                    compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                                    for compositeFrame in compositeFrames:
-                                        area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
-                                        if area_el is not None:
-                                            route_data['network_id'] = area_el.attrib['id']
-                                            name = area_el.find('./n:Name', self.ns)
-                                            if name is not None:
-                                                route_data['network'] = name.text
-                                            code = area_el.find('./n:ShortName', self.ns)
-                                            if code is not None:
-                                                route_data['network_code'] = code.text
-
-                            if route_data['network'] is None:
-                                route_data['network'] = area.attrib['ref']
-                                route_data['network_id'] = area.attrib['ref']
-            
-            type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
-            if type_of_service_ref_el is not None:
-                type_of_service_ref = type_of_service_ref_el.attrib['ref']
-
-                if enum_list is not None:
-                    for enum in enum_list:
-                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                        for compositeFrame in compositeFrames:
-                            type_of_service_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService[@id='{type_of_service_ref}']", self.ns)
-                            if type_of_service_el is not None:
-                                name = type_of_service_el.find('./n:Name', self.ns)
-                                if name is not None:
-                                    route_data['type_of_service'] = name.text
+            if enum_list is not None:
+                for enum in enum_list:
+                    compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                    for compositeFrame in compositeFrames:
+                        type_of_service_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService[@id='{type_of_service_ref}']", self.ns)
+                        if type_of_service_el is not None:
+                            name = type_of_service_el.find('./n:Name', self.ns)
+                            if name is not None:
+                                route_data['type_of_service'] = name.text
 
 
-            return route_data
+        return route_data
+
+
+    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
+        routes = service.find('./n:routes', self.ns)
 
         # fallback 1: GERMANY
         if routes is None:
