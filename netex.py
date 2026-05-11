@@ -976,11 +976,11 @@ class Netex:
                     datasource_el = resource.find(f'./n:dataSources/n:DataSource[@id="{def_datasource_el.attrib['ref']}"]', self.ns)
                     if datasource_el is not None:
                         name_el = datasource_el.find('./n:Name', self.ns)
-                        if name_el:
+                        if name_el is not None:
                             self.defaults['datasource'] = name_el.text
 
                         short_name_el = datasource_el.find('./n:ShortName', self.ns)
-                        if short_name_el:
+                        if short_name_el is not None:
                             self.defaults['datasource_code'] = short_name_el.text
 
             df_crs = 'wgs84'
