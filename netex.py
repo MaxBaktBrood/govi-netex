@@ -393,7 +393,7 @@ class Netex:
 
                 line_gdf = geopandas.GeoDataFrame.from_features(
                     features=[line_geodata]
-                ).set_crs(crs)
+                ).set_crs(crs).to_crs(self.defaults['crs'])
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
             return
@@ -533,13 +533,13 @@ class Netex:
 
             line_gdf = geopandas.GeoDataFrame.from_features(
                 features=[line_geodata]
-            ).set_crs(crs)
+            ).set_crs(crs).to_crs(self.defaults['crs'])
 
             line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
             points_gdf = geopandas.GeoDataFrame.from_features(
                 features=[points_geodata]
-            ).set_crs(crs)
+            ).set_crs(crs).to_crs(self.defaults['crs'])
 
             points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
         
@@ -857,14 +857,15 @@ class Netex:
 
         stop_points_gdf = geopandas.GeoDataFrame.from_features(
             features=stop_points_geodata
-        ).set_crs(crs)
+        ).set_crs(crs).to_crs(self.defaults['crs'])
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
 
     defaults = {
         'datasource':None,
-        'datasource_code':None
+        'datasource_code':None,
+        'crs':3857, # 3857 = wgs84
     }
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
