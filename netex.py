@@ -232,13 +232,15 @@ class Netex:
                     'line_code':None,
                     'direction':None,
                     'formula':None,
+                    'type_of_product':None,
                     'authority':None,
                     'authority_code':None,
                     'operator':None,
                     'operator_code':None,
                     'network':None,
+                    'network_id':None,
                     'network_code':None,
-                    'type_of_service':None,
+                    'type_of_service':None
                 }
 
                 line_ref_el = pattern.find('./n:RouteView/n:LineRef', self.ns)
@@ -281,7 +283,7 @@ class Netex:
                         previous_stoppoint = stoppoint
 
                 if line is not None:
-                    route_data = line_information(line, route_data)
+                    route_data = self.line_information(line, resource, route_data, enum_list)
 
                 if 'network_witelist' in self.options:
                     if route_data['network_id'] not in self.options['network_inclusions']:
@@ -335,18 +337,21 @@ class Netex:
                     'id':None,
                     'line_id':None,
                     'mode_of_transport':None,
+                    'sub_mode_of_transport':None,
                     'line_number':None,
                     'line_name':None,
                     'line_code':None,
                     'direction':None,
                     'formula':None,
+                    'type_of_product':None,
                     'authority':None,
                     'authority_code':None,
                     'operator':None,
                     'operator_code':None,
-                    "network_id":None,
                     'network':None,
+                    'network_id':None,
                     'network_code':None,
+                    'type_of_service':None
                 }
 
                 made_up_route_id = []
@@ -389,7 +394,7 @@ class Netex:
                 if len(line_geodata['geometry']['coordinates']) == 0: continue
 
                 if line is not None:
-                    route_data = line_information(line, route_data)
+                    route_data = self.line_information(line, resource, route_data, enum_list)
                 
                 if 'network_inclusions' in self.options:
                     if route_data['network_id'] not in self.options['network_inclusions']:
@@ -428,11 +433,13 @@ class Netex:
                 'id':route.attrib['id'],
                 'line_id':None,
                 'mode_of_transport':None,
+                'sub_mode_of_transport':None,
                 'line_number':None,
                 'line_name':None,
                 'line_code':None,
                 'direction':None,
                 'formula':None,
+                'type_of_product':None,
                 'authority':None,
                 'authority_code':None,
                 'operator':None,
@@ -440,11 +447,12 @@ class Netex:
                 'network':None,
                 'network_id':None,
                 'network_code':None,
+                'type_of_service':None
             }
             
 
             if line is not None:
-                route_data = line_information(line, route_data)
+                route_data = self.line_information(line, resource, route_data, enum_list)
 
             if 'network_inclusions' in self.options:
                 if route_data['network_id'] not in self.options['network_inclusions']:
@@ -644,6 +652,25 @@ class Netex:
                 'network_code':None,
             }
 
+            line_data = {
+                'line_id':None,
+                'mode_of_transport':None,
+                'sub_mode_of_transport':None,
+                'line_number':None,
+                'line_name':None,
+                'line_code':None,
+                'direction':None,
+                'formula':None,
+                'type_of_product':None,
+                'authority':None,
+                'authority_code':None,
+                'operator':None,
+                'operator_code':None,
+                'network':None,
+                'network_code':None,
+                'type_of_service':None,
+            }
+
             pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
             if pattern_ref is not None and patterns is not None:
                 pattern = patterns.find(f'./n:ServiceJourneyPattern[@id="{pattern_ref.attrib['ref']}"]', self.ns)
@@ -657,6 +684,9 @@ class Netex:
                             journey_data['line_id'] = line_ref_el.attrib['ref']
                             line = service.find(f'./n:lines/n:Line[@id="{journey_data['line_id']}"]', self.ns)
                             if line is not None:
+                                if resource is not None:
+                                    line_data = self.line_information(line, resource, line_data, enum_list)
+
                                 line_name = None
                                 line_number = None
                                 
