@@ -793,6 +793,13 @@ class Netex:
                                             "name":None,
                                             "line_numbers":set(),
                                             "lines":set(),
+                                            "line_codes":set(),
+                                            "formulas":set(),
+                                            'types_of_product':set(),
+                                            'modes_of_transport':set(),
+                                            'sub_modes_of_transport':set(),
+                                            "operators":set(),
+                                            "networks":set(),
                                             "stopplace":None,
                                             "stopplace_name":None,
                                             "stopplace_public_name":None,
@@ -853,7 +860,20 @@ class Netex:
                             stop_points_geodata['features'][point_id]["properties"]["line_numbers"].add(journey_data['line_number'])
                         if journey_data['line_name'] is not None:
                             stop_points_geodata['features'][point_id]["properties"]["lines"].add(journey_data['line_name'])
-
+                        if 'mode_of_transport' in line_data and line_data['mode_of_transport'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["modes_of_transport"].add(line_data['mode_of_transport'])
+                        if 'sub_mode_of_transport' in line_data and line_data['sub_mode_of_transport'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["sub_modes_of_transport"].add(line_data['sub_mode_of_transport'])
+                        if 'line_code' in line_data and line_data['line_code'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["line_codes"].add(line_data['line_code'])
+                        if 'formula' in line_data and line_data['formula'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["formulas"].add(line_data['formula'])
+                        if 'type_of_product' in line_data and line_data['type_of_product'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["types_of_product"].add(line_data['type_of_product'])
+                        if 'operator' in line_data and line_data['operator'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["operators"].add(line_data['operator'])
+                        if 'network' in line_data and line_data['network'] is not None:
+                            stop_points_geodata['features'][point_id]["properties"]["networks"].add(line_data['network'])
 
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
@@ -888,7 +908,14 @@ class Netex:
 
         def modifyFeature(x):
             x["properties"]["line_numbers"] = ", ".join(list(x["properties"]["line_numbers"]))
-            x["properties"]["lines"] = " | ".join(map(lambda x: "".replace(' | ', ' \| '), list(x["properties"]["lines"])))
+            x["properties"]["lines"] = " | ".join(map(lambda x: x.replace(' | ', ' \| '), list(x["properties"]["lines"])))
+            x["properties"]["modes_of_transport"] = ", ".join(list(x["properties"]["modes_of_transport"]))
+            x["properties"]["sub_modes_of_transport"] = ", ".join(list(x["properties"]["sub_modes_of_transport"]))
+            x["properties"]["line_codes"] = ", ".join(list(x["properties"]["line_codes"]))
+            x["properties"]["formulas"] = ", ".join(list(x["properties"]["formulas"]))
+            x["properties"]["types_of_product"] = ", ".join(list(x["properties"]["types_of_product"]))
+            x["properties"]["operators"] = ", ".join(list(x["properties"]["operators"]))
+            x["properties"]["networks"] = ", ".join(list(x["properties"]["networks"]))
             return x
         
         stop_points_geodata['features'] = list(map(modifyFeature, stop_points_geodata['features']))
