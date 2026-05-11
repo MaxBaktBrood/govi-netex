@@ -72,7 +72,7 @@ linecode_categories = {}
 
 if os.path.exists(f'{non_netex_folder}/abc-lijnen.xlsx'):
     print('Inladen ABC-categorieën')
-    linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').astype("str").set_index('code')["ABC-Category"].to_dict()
+    linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').replace(float('nan'), None).set_index('code')["ABC-Category"].to_dict()
 
 for file in os.listdir(data_folder):
     split_path = os.path.splitext(file)
@@ -102,11 +102,13 @@ aliasses = {
         'id':'route_id',
         'line_id':'lijn_id',
         'mode_of_transport':'vervoersmiddel',
+        "sub_mode_of_transport":'subcategorie vervoersmiddel',
         'line_number':'lijnnummer',
         'line_name':'lijnnaam',
         'line_code':'lijncode',
         'direction':'richting',
         'formula':'merknaam',
+        'type_of_product':'producttype',
         'authority':'ov-autoriteit',
         'authority_code':'ov-autoriteit_code',
         'operator':'vervoerder',
@@ -114,7 +116,8 @@ aliasses = {
         'network':'concessie',
         'network_id':'concessie_id',
         'network_code':'concessie_code',
-        'custom_category':'abc-categorie'
+        'custom_category':'abc-categorie',
+        'type_of_service':'soort ov-dienst'
     },
     'scheduled_stop_points':{
         # "id":stop_point.attrib['id'],
@@ -122,6 +125,13 @@ aliasses = {
         "name":'perronnaam',
         "line_numbers":'lijnnummers',
         "lines":'lijnnamen',
+        "modes_of_transport":'vervoersmiddel',
+        "sub_modes_of_transport":'subcategorie vervoersmiddel',
+        "line_codes":'lijncodes',
+        "formulas":'merknamen',
+        "types_of_product":'producttypes',
+        "operators":'vervoerders',
+        "networks":'concessies',
         'stopplace':'haltegroepcode',
         "stopplace_name":'haltegroepnaam',
         "stopplace_public_name":'haltegroepnaam_publiek',
