@@ -301,13 +301,13 @@ class Netex:
 
                 line_gdf = geopandas.GeoDataFrame.from_features(
                     features=[line_geodata]
-                ).set_crs(crs)
+                ).set_crs(crs).to_crs(self.defaults['crs'])
 
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
                 points_gdf = geopandas.GeoDataFrame.from_features(
                     features=[points_geodata]
-                ).set_crs(crs)
+                ).set_crs(crs).to_crs(self.defaults['crs'])
 
                 points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
 
