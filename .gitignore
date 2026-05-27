@@ -3,3 +3,5 @@ xsd/**
 secrets.json
 netex.gpkg
 __pycache__/**
+input/20260325-2321_netex_evu_2026.zip
+input/transilien-netexfr.zip

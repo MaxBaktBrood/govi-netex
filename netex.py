@@ -110,7 +110,7 @@ class Netex:
                                             if code is not None:
                                                 route_data['network_code'] = code.text
 
-                            if route_data['network'] is None:
+                            if route_data['network'] is None and area is not None:
                                 route_data['Network'] = area.attrib['ref']
         
             return route_data
