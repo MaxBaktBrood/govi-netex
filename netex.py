@@ -983,10 +983,28 @@ class Netex:
             realtime_info_el = journey.find(f'./n:Monitored', self.ns)
             if realtime_info_el: journey_data['realtime_info'] = (realtime_info_el.text == 'true')
 
+            journeys_df = pd.DataFrame.from_dict(
+                dict(list(map(
+                    lambda x: (x, [journey_data[x]]),
+                    journey_data.keys()
+                )))
+            )
+
+            if time_table:
+                con = sqlite3.connect(f'{output_folder}/netex.gpkg')
+                
+                journeys_df.to_sql('journeys', con, if_exists='append', index=False, dtype={'id':'STRING PRIMARY KEY'})
+
+                journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps).astype('str')
+                journey_timestamps_df.insert(0, 'journey', '')
+                journey_timestamps_df['journey'] = journey_data['id']
+                journey_timestamps_df.to_sql('journey_timestamps', con, if_exists='append', index=False)
+
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
             # if time_demand_type_ref is not None and time_demand_types is not None:
             #     ref = time_demand_type_ref.attrib['ref']
             #     time_demand = time_demand_types.find(f'./n:TimeDemandType[@id="{ref}"]', self.ns)
+            con.close()
 
         stop_points_geodata['features'] = list(stop_points_geodata['features'].values())
 
