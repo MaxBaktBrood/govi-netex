@@ -1,5 +1,5 @@
 import xml.etree.ElementTree as ET
-import geopandas
+import geopandas as gpd
 import pygml
 import json
 import os
@@ -301,13 +301,13 @@ class Netex:
                 line_geodata['properties'] = route_data
                 points_geodata['properties'] = route_data
 
-                line_gdf = geopandas.GeoDataFrame.from_features(
+                line_gdf = gpd.GeoDataFrame.from_features(
                     features=[line_geodata]
                 ).set_crs(crs).to_crs(self.defaults['crs'])
 
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
-                points_gdf = geopandas.GeoDataFrame.from_features(
+                points_gdf = gpd.GeoDataFrame.from_features(
                     features=[points_geodata]
                 ).set_crs(crs).to_crs(self.defaults['crs'])
 
@@ -406,7 +406,7 @@ class Netex:
 
                 line_geodata['properties'] = route_data
 
-                line_gdf = geopandas.GeoDataFrame.from_features(
+                line_gdf = gpd.GeoDataFrame.from_features(
                     features=[line_geodata]
                 ).set_crs(crs).to_crs(self.defaults['crs'])
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
@@ -549,13 +549,13 @@ class Netex:
             line_geodata['properties'] = route_data
             points_geodata['properties'] = route_data
 
-            line_gdf = geopandas.GeoDataFrame.from_features(
+            line_gdf = gpd.GeoDataFrame.from_features(
                 features=[line_geodata]
             ).set_crs(crs).to_crs(self.defaults['crs'])
 
             line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
-            points_gdf = geopandas.GeoDataFrame.from_features(
+            points_gdf = gpd.GeoDataFrame.from_features(
                 features=[points_geodata]
             ).set_crs(crs).to_crs(self.defaults['crs'])
 
