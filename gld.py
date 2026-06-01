@@ -12,6 +12,7 @@ import sqlite3
 from fudgeo import GeoPackage
 from epiap import Epiap
 import pandas as pd
+import shapefile
 
 # Netex processing for the province of Gelderland
 
