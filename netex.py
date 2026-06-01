@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 import geopandas as gpd
+import pandas as pd
 import pygml
 import json
 import os
@@ -8,6 +9,10 @@ import gzip
 import requests
 import typing
 from epiap import Epiap
+from datetime import timedelta, datetime
+import copy
+import isodate
+import sqlite3
 
 output_folder = './output'
 
@@ -636,21 +641,27 @@ class Netex:
 
             journey_data = {
                 'id':journey.attrib['id'],
+                'number': None,
                 'route':None,
                 'line_id':None,
                 'available_from':None,
                 'available_through':None,
                 'available_day_bits':None,
                 'in_scope_of_operator':None,
-                'number':None,
                 'distance':0,
+                'dru':None,
                 'direction':None,
                 'line_name':None,
                 'line_number':None,
                 'network':None,
                 'network_id':None,
                 'network_code':None,
+                'realtime_info': None
             }
+
+            journey_timestamps = [
+
+            ]
 
             line_data = {
                 'line_id':None,
@@ -670,6 +681,11 @@ class Netex:
                 'network_code':None,
                 'type_of_service':None,
             }
+
+            time_demand_type = None
+            time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
+            if time_demand_type_ref is not None and time_demand_types is not None:
+                time_demand_type = time_demand_types.find(f'./n:TimeDemandType[@id="{time_demand_type_ref.attrib['ref']}"]', self.ns)
 
             pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
             if pattern_ref is not None and patterns is not None:
@@ -745,7 +761,28 @@ class Netex:
                         direction = direction_el.text
                         journey_data['direction'] = direction
 
-                    for point in pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns):
+                    time_tracker = None
+                    if journey.find('./n:DepartureTime', self.ns) is not None:
+                        time_tracker = datetime.strptime(journey.find('./n:DepartureTime', self.ns).text, "%H:%M:%S")
+
+                    time_in_service = {
+                        'from':copy.deepcopy(time_tracker),
+                        'to':None
+                    }
+
+                    points = pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns)
+
+                    for index, point in enumerate(points):
+                        stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
+                        quay = None
+
+                        if stoppoint_ref is not None and 'ref' in stoppoint_ref.attrib:
+                            if stoppoint_ref.attrib['ref'] in quays_per_stoppoint:
+                                quay = quays_per_stoppoint[stoppoint_ref.attrib['ref']]
+
+                        driving_time = None
+                        wait_time = None
+
                         timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
                         if timing_link_ref is not None and timing_links is not None:
                             ref = timing_link_ref.attrib['ref']
@@ -754,14 +791,45 @@ class Netex:
                             if distance_el is not None:
                                 distance = float(distance_el.text)
                                 journey_data['distance'] += distance
+                            
+                            if time_demand_type is not None:
+                                runtime_el = time_demand_type.find(f'./n:runTimes/n:JourneyRunTime/n:TimingLinkRef[@ref="{ref}"]/../n:RunTime', self.ns)
+                                if runtime_el is not None:
+                                    driving_time = isodate.parse_duration(runtime_el.text)
+                                
+                                waittime_el = time_demand_type.find(f'./n:waitTimes/n:JourneyWaitTime/n:ScheduledStopPointRef[@ref="{stoppoint_ref.attrib['ref']}"]/../n:WaitTime', self.ns)
+                                if waittime_el is not None:
+                                    wait_time = isodate.parse_duration(waittime_el.text)
 
-                        
-                        stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
-                        quay = None
+                        if quay and time_tracker:
+                            arrival = time_tracker.strftime("%H:%M:%S")
 
-                        if stoppoint_ref is not None and 'ref' in stoppoint_ref.attrib:
-                            if stoppoint_ref.attrib['ref'] in quays_per_stoppoint:
-                                quay = quays_per_stoppoint[stoppoint_ref.attrib['ref']]
+                            if wait_time is not None:
+                                time_tracker = time_tracker + wait_time
+
+                            departure = time_tracker.strftime("%H:%M:%S")
+
+                            if driving_time is not None:
+                                time_tracker = time_tracker + driving_time
+
+                            if index == 0:
+                                journey_timestamps.append({
+                                    'quay':quay,
+                                    'arrival':None,
+                                    'departure':departure
+                                })
+                            elif index + 1 == len(points):
+                                journey_timestamps.append({
+                                    'quay':quay,
+                                    'arrival':arrival,
+                                    'departure':None
+                                })
+                            else:
+                                journey_timestamps.append({
+                                    'quay':quay,
+                                    'arrival':arrival,
+                                    'departure':departure
+                                })
 
                         # passenger_stop_assignment = service.find(f'./n:stopAssignments/n:PassengerStopAssignment/n:ScheduledStopPointRef[@ref="{stoppoint_ref.attrib['ref']}"]/..', self.ns)
                         # if passenger_stop_assignment is not None:
@@ -886,6 +954,10 @@ class Netex:
 
                             return properties
                         stop_points_geodata['features'][point_id]["properties"] = add_line_properties(stop_points_geodata['features'][point_id]["properties"], line_data)
+                    
+                    if time_tracker:
+                        time_in_service['to'] = time_tracker
+                        journey_data['dru'] = (time_in_service['to'] - time_in_service['from']).total_seconds() / 3600
 
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
@@ -905,11 +977,11 @@ class Netex:
                 if owner_operator is not None:
                     journey_data['in_scope_of_operator'] = (owner_operator.text == 'true')
 
-            journey_number_el = journey.find(f'./n:privateCodes/n:PrivateCode[@id="JourneyNumber"]', self.ns)
-            if journey_number_el: journey['number'] = journey_number_el.text
+            journey_number_el = journey.find(f'./n:privateCodes/n:PrivateCode[@type="JourneyNumber"]', self.ns)
+            if journey_number_el: journey_data['number'] = journey_number_el.text
 
             realtime_info_el = journey.find(f'./n:Monitored', self.ns)
-            if realtime_info_el: journey['realtime_info'] = (realtime_info_el.text == 'true')
+            if realtime_info_el: journey_data['realtime_info'] = (realtime_info_el.text == 'true')
 
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
             # if time_demand_type_ref is not None and time_demand_types is not None:
@@ -934,11 +1006,59 @@ class Netex:
 
         if len(stop_points_geodata['features']) == 0: return
 
-        stop_points_gdf = geopandas.GeoDataFrame.from_features(
+        stop_points_gdf = gpd.GeoDataFrame.from_features(
             features=stop_points_geodata
         ).set_crs(crs).to_crs(self.defaults['crs'])
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
+
+        con = sqlite3.connect(f'{output_folder}/netex.gpkg')
+
+        journeys_df = pd.DataFrame.from_dict(
+            dict(list(map(
+                lambda x: (x, [journey_data[x]]),
+                journey_data.keys()
+            )))
+        )
+        """.astype({
+            'id':'str',
+            'number': 'int32',
+            'route':'str',
+            'line_id':'str',
+            'available_from':'str',
+            'available_through':'str',
+            'available_day_bits':'str',
+            'in_scope_of_operator':'bool',
+            'distance':'float32',
+            'dru':'float32',
+            'direction':'str',
+            'line_name':'str',
+            'line_number':'str',
+            'network':'str',
+            'network_id':'str',
+            'network_code':'str',
+            'realtime_info': 'bool'
+        })"""
+
+        journeys_df.to_sql('journeys', con, if_exists='append', index=False)
+
+        journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps).astype('str')
+        journey_timestamps_df.insert(0, 'journey', '')
+        journey_timestamps_df['journey'] = journey_data['id']
+        journey_timestamps_df.to_sql('journey_timestamps', con, if_exists='append', index=False)
+
+        con.close()
+
+    def get(self, layers=[]):
+        data = {}
+
+        for layer in layers:
+            try:
+               data[layer] = gpd.read_file(f'{output_folder}/netex.gpkg', layer=layer)
+            except:
+                pass 
+
+        return data
 
 
     defaults = {
