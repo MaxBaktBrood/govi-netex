@@ -596,14 +596,27 @@ class Netex:
     #                     location = [lng.text, lat.text]
     #     pass
     
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, epiap_list:list[Epiap]|None=None, crs='wgs84'):
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, epiap_list:list[Epiap]|None=None, crs='wgs84', loom=True, time_table = True):
         journeys = timetable.find('./n:vehicleJourneys', self.ns)
         patterns = service.find('./n:journeyPatterns', self.ns)
         time_demand_types = service.find('./n:timeDemandTypes', self.ns)
         timing_links = service.find('./n:timingLinks', self.ns)
         stop_points = service.find('./n:scheduledStopPoints', self.ns)
+        timing_points = service.find('./n:TimingPoints', self.ns) #only for loom
+        route_links = service.find(f"./n:routeLinks", self.ns) #only for loom
         stop_areas = service.find('./n:stopAreas', self.ns)
         availability_conditions = timetable.find('./n:contentValidityConditions', self.ns)
+
+        def route_link_index(route_links: ET.Element):
+                        summary = {}
+                        for link in route_links.findall('./*', self.ns):
+                            geodata = pygml.parse(ET.tostring(link.find(f"./gml:LineString", self.ns)))
+                            link_from = link.find('./n:FromPointRef', self.ns).attrib['ref']
+                            link_to = link.find('./n:ToPointRef', self.ns).attrib['ref']
+                            summary[f'{link_from} - {link_to}'] = dict(geodata.__geo_interface__)['coordinates']
+                        return summary
+        loom_route_links = {}
+        if loom and route_links: loom_route_links = route_link_index(route_links)
 
         def quay_stoppoint_assigner(el: ET.Element):
             stoppoint_el = el.find(f'./n:ScheduledStopPointRef', self.ns)
@@ -628,6 +641,8 @@ class Netex:
             "type": "FeatureCollection",
             "features": {}
         }
+
+        loom_geodata = {}
 
         if journeys is None: return
 
@@ -770,9 +785,22 @@ class Netex:
                         'to':None
                     }
 
-                    points = pattern.findall('./n:pointsInSequence/n:StopPointInJourneyPattern', self.ns)
-
+                    loom_route_points = []
+                    
+                    points = pattern.findall('./n:pointsInSequence/*', self.ns)
                     for index, point in enumerate(points):
+
+                        if point.tag == f'{{{self.ns['n']}}}TimingPointInJourneyPattern':
+                            if not loom: continue
+                            timingpoint_ref = point.find('./n:TimingPointRef', self.ns)
+                            if timingpoint_ref is not None and timing_points is not None:  
+                                timing_point: ET.Element = timing_points.find(f'./n:TimingPoint[@id="{stoppoint_ref.attrib['ref']}"]', self.ns)
+                                if timing_point is not None:
+                                        route_point_el = timing_point.find('./n:projections/n:PointProjection/n:ProjectToPointRef', self.ns)
+                                        if route_point_el is not None and 'ref' in route_point_el.attrib:
+                                            loom_route_points.append(route_point_el.attrib['ref'])
+                            continue
+                        
                         stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
                         quay = None
 
@@ -923,6 +951,35 @@ class Netex:
 
                                     if location not in stop_points_geodata['features'][point_id]['geometry']['coordinates']:
                                         stop_points_geodata['features'][point_id]['geometry']['coordinates'].append(location)
+                                    
+                                    if loom:
+                                        route_point_el = stop_point.find('./n:projections/n:PointProjection/n:ProjectToPointRef', self.ns)
+                                        if route_point_el is not None and 'ref' in route_point_el.attrib:
+                                            loom_route_points.append({
+                                                'point':route_point_el.attrib['ref'],
+                                                'stopplace':stop_points_geodata['features'][point_id]['properties']['stopplace']
+                                            })
+
+                        if loom:
+                            for index, loom_route_point in enumerate(loom_route_points):
+                                if index == 0: continue
+                                loom_route_link_id = f'{loom_route_points[index - 1]['point']} - {loom_route_point['point']}'
+                                loom_line_id = f'{loom_route_points[index - 1]['point']} - {loom_route_point['stopplace']}'
+                                if loom_route_link_id not in loom_route_links: 
+                                    print(f'LOOM: Geodata incompleet voor {loom_route_point['stopplace']}')
+                                    continue
+                                loom_geodata['line_'+loom_line_id] = {
+                                    "type": "Feature",
+                                    "geometry": {
+                                        "type": "LineString",
+                                        "coordinates": loom_route_links[loom_route_link_id]
+                                    },
+                                    "properties":{
+                                        'from':loom_route_points[index - 1]['stopplace'],
+                                        'to':loom_route_point['stopplace']
+                                    }
+                                }
+
 
                         def add_line_properties(properties, line_data):
                             if journey_data['line_number'] is not None:
@@ -954,7 +1011,7 @@ class Netex:
 
                             return properties
                         stop_points_geodata['features'][point_id]["properties"] = add_line_properties(stop_points_geodata['features'][point_id]["properties"], line_data)
-                    
+
                     if time_tracker:
                         time_in_service['to'] = time_tracker
                         journey_data['dru'] = (time_in_service['to'] - time_in_service['from']).total_seconds() / 3600
@@ -1022,6 +1079,27 @@ class Netex:
         
         stop_points_geodata['features'] = list(map(modifyFeature, stop_points_geodata['features']))
 
+        if loom:
+            for feautre in stop_points_geodata['features']:
+                stop_place_code = feautre['properties']['stopplace']
+                if f'stop_{stop_place_code}' in loom_geodata: continue
+
+                loom_feature = copy.copy(feautre)
+                loom_feature['geometry']['coordinates'] = feautre['geometry']['coordinates'][0]
+                loom_feature['properties'] = {
+                    'id':feautre['properties']['stopplace'],
+                    'station_id':feautre['properties']['stopplace'],
+                    'station_label':feautre['properties']['stopplace_name']
+                }
+
+                if not loom_feature['properties']['station_label']:
+                    loom_feature['properties']['station_label'] = feautre['properties']['name']
+
+                loom_geodata[f'stop_{stop_place_code}'] = loom_feature
+            
+            open(f'{output_folder}/loom.json', 'w').write(json.dumps({"type": "FeatureCollection",'features':list(loom_geodata.values())}))
+
+
         if len(stop_points_geodata['features']) == 0: return
 
         stop_points_gdf = gpd.GeoDataFrame.from_features(
@@ -1030,42 +1108,6 @@ class Netex:
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
-        con = sqlite3.connect(f'{output_folder}/netex.gpkg')
-
-        journeys_df = pd.DataFrame.from_dict(
-            dict(list(map(
-                lambda x: (x, [journey_data[x]]),
-                journey_data.keys()
-            )))
-        )
-        """.astype({
-            'id':'str',
-            'number': 'int32',
-            'route':'str',
-            'line_id':'str',
-            'available_from':'str',
-            'available_through':'str',
-            'available_day_bits':'str',
-            'in_scope_of_operator':'bool',
-            'distance':'float32',
-            'dru':'float32',
-            'direction':'str',
-            'line_name':'str',
-            'line_number':'str',
-            'network':'str',
-            'network_id':'str',
-            'network_code':'str',
-            'realtime_info': 'bool'
-        })"""
-
-        journeys_df.to_sql('journeys', con, if_exists='append', index=False)
-
-        journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps).astype('str')
-        journey_timestamps_df.insert(0, 'journey', '')
-        journey_timestamps_df['journey'] = journey_data['id']
-        journey_timestamps_df.to_sql('journey_timestamps', con, if_exists='append', index=False)
-
-        con.close()
 
     def get(self, layers=[]):
         data = {}
