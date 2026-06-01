@@ -856,24 +856,36 @@ class Netex:
                                     if location not in stop_points_geodata['features'][point_id]['geometry']['coordinates']:
                                         stop_points_geodata['features'][point_id]['geometry']['coordinates'].append(location)
 
-                        if journey_data['line_number'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["line_numbers"].add(journey_data['line_number'])
-                        if journey_data['line_name'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["lines"].add(journey_data['line_name'])
-                        if 'mode_of_transport' in line_data and line_data['mode_of_transport'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["modes_of_transport"].add(line_data['mode_of_transport'])
-                        if 'sub_mode_of_transport' in line_data and line_data['sub_mode_of_transport'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["sub_modes_of_transport"].add(line_data['sub_mode_of_transport'])
-                        if 'line_code' in line_data and line_data['line_code'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["line_codes"].add(line_data['line_code'])
-                        if 'formula' in line_data and line_data['formula'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["formulas"].add(line_data['formula'])
-                        if 'type_of_product' in line_data and line_data['type_of_product'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["types_of_product"].add(line_data['type_of_product'])
-                        if 'operator' in line_data and line_data['operator'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["operators"].add(line_data['operator'])
-                        if 'network' in line_data and line_data['network'] is not None:
-                            stop_points_geodata['features'][point_id]["properties"]["networks"].add(line_data['network'])
+                        def add_line_properties(properties, line_data):
+                            if journey_data['line_number'] is not None:
+                                stop_points_geodata['features'][point_id]["properties"]["line_numbers"].add(journey_data['line_number'])
+
+                            if journey_data['line_name'] is not None:
+                                properties["lines"].add(journey_data['line_name'])
+
+                            if 'mode_of_transport' in line_data and line_data['mode_of_transport'] is not None:
+                                properties["modes_of_transport"].add(line_data['mode_of_transport'])
+
+                            if 'sub_mode_of_transport' in line_data and line_data['sub_mode_of_transport'] is not None:
+                                properties["sub_modes_of_transport"].add(line_data['sub_mode_of_transport'])
+
+                            if 'line_code' in line_data and line_data['line_code'] is not None:
+                                properties["line_codes"].add(line_data['line_code'])
+
+                            if 'formula' in line_data and line_data['formula'] is not None:
+                                properties["formulas"].add(line_data['formula'])
+
+                            if 'type_of_product' in line_data and line_data['type_of_product'] is not None:
+                                properties["types_of_product"].add(line_data['type_of_product'])
+
+                            if 'operator' in line_data and line_data['operator'] is not None:
+                                properties["operators"].add(line_data['operator'])
+
+                            if 'network' in line_data and line_data['network'] is not None:
+                                properties["networks"].add(line_data['network'])
+
+                            return properties
+                        stop_points_geodata['features'][point_id]["properties"] = add_line_properties(stop_points_geodata['features'][point_id]["properties"], line_data)
 
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
