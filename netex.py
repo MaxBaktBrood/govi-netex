@@ -661,9 +661,6 @@ class Netex:
                 'number': None,
                 'route':None,
                 'line_id':None,
-                'available_from':None,
-                'available_through':None,
-                'available_day_bits':None,
                 'in_scope_of_operator':None,
                 'distance':0,
                 'dru':None,
@@ -1031,17 +1028,27 @@ class Netex:
                         time_in_service['to'] = time_tracker
                         journey_data['dru'] = (time_in_service['to'] - time_in_service['from']).total_seconds() / 3600
 
+            validity_conditions = {}
+
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
                 for ref in refs:
                     condition = availability_conditions.find(f"./n:AvailabilityCondition[@id='{ref.attrib['ref']}']", self.ns)
-                    if condition:
+                    condition_data = {
+                        'id':ref.attrib['ref'],
+                        'from':None,
+                        'through':None,
+                        'bits':None
+                    }
+                    if condition is not None:
                         condition_from = condition.find('./n:FromDate', self.ns)
-                        if condition_from: journey_data['available_from'] = condition_from.text
+                        if condition_from is not None: condition_data['from'] = condition_from.text
                         condition_through = condition.find('./n:ToDate', self.ns)
-                        if condition_through: journey_data['available_through'] = condition_through.text
+                        if condition_through is not None: condition_data['through'] = condition_through.text
                         condition_bits = condition.find('./n:ValidDayBits', self.ns)
-                        if condition_bits: journey_data['available_day_bits'] = condition_bits.text
+                        if condition_bits is not None: condition_data['bits'] = condition_bits.text
+
+                        validity_conditions.setdefault(ref.attrib['ref'], condition_data)
 
             owner_operator_el = journey.find('./n:keyList/n:KeyValue[n:Key="DataOwnerIsOperator"]', self.ns)
             if owner_operator_el is not None:
@@ -1063,20 +1070,32 @@ class Netex:
             )
 
             if time_table:
-                con = sqlite3.connect(f'{output_folder}/netex.gpkg')
-                
+                con = sqlite3.connect(f'{output_folder}/netex.db')
+
                 journeys_df.to_sql('journeys', con, if_exists='append', index=False, dtype={'id':'STRING PRIMARY KEY'})
 
-                journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps).astype('str')
+                journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps)
                 journey_timestamps_df.insert(0, 'journey', '')
                 journey_timestamps_df['journey'] = journey_data['id']
                 journey_timestamps_df.to_sql('journey_timestamps', con, if_exists='append', index=False)
+                cur = con.cursor()
+                cur.execute('CREATE TABLE IF NOT EXISTS availabilities (id TEXT PRIMARY KEY, available_from TEXT, available_through TEXT, bits TEXT)')
+                cur.executemany("INSERT OR REPLACE INTO availabilities VALUES (?, ?, ?, ?)", list(map(
+                    lambda x: (x['id'], x['from'], x['through'], x['bits']),
+                    validity_conditions.values()
+                )))
+                cur.execute('CREATE TABLE IF NOT EXISTS availabilities_per_journey (id INTEGER PRIMARY KEY, journey TEXT NOT NULL, availability TEXT NOT NULL, line TEXT NOT NULL)')
+                cur.executemany("INSERT OR REPLACE INTO availabilities_per_journey VALUES (?, ?, ?, ?)", list(map(
+                    lambda x: (None, journey_data['id'], x['id'], journey_data['line_id']),
+                    validity_conditions.values()
+                )))
+                con.commit()
 
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
             # if time_demand_type_ref is not None and time_demand_types is not None:
             #     ref = time_demand_type_ref.attrib['ref']
             #     time_demand = time_demand_types.find(f'./n:TimeDemandType[@id="{ref}"]', self.ns)
-            con.close()
+                con.close()
 
         stop_points_geodata['features'] = list(stop_points_geodata['features'].values())
 
