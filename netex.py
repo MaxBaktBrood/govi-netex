@@ -299,6 +299,8 @@ class Netex:
                     if route_data['network_id'] in self.options['network_exclutions']:
                         continue
                 
+                self.notice_able_ids.append(route_data['line_id'])
+                
                 # For Germany useless here
                 direction_el = pattern.find('./n:DirectionType', self.ns)
                 if direction_el is not None:
@@ -410,6 +412,8 @@ class Netex:
                     if route_data['network_id'] in self.options['network_exclutions']:
                         continue
 
+                self.notice_able_ids.append(route_data['line_id'])
+
                 line_geodata['properties'] = route_data
 
                 line_gdf = gpd.GeoDataFrame.from_features(
@@ -467,6 +471,8 @@ class Netex:
             if 'network_exclutions' in self.options:
                 if route_data['network_id'] in self.options['network_exclutions']:
                     continue
+            
+            self.notice_able_ids.append(route_data['line_id'])
 
             line_geodata = {
                 "type": "Feature",
@@ -1028,6 +1034,8 @@ class Netex:
                         time_in_service['to'] = time_tracker
                         journey_data['dru'] = (time_in_service['to'] - time_in_service['from']).total_seconds() / 3600
 
+            self.notice_able_ids.append(journey_data['id'])
+
             validity_conditions = {}
 
             if journey.find('./n:validityConditions', self.ns) is not None and availability_conditions is not None:
@@ -1157,6 +1165,35 @@ class Netex:
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
+    def getNotices(self, service:ET.Element, only_used=True):
+        notices = service.find('./n:notices', self.ns)
+        notice_assignments = service.find('./n:noticeAssignments', self.ns)
+
+        if notices is None or notice_assignments is None: return
+
+        for assignment in notice_assignments.findall('./*', self.ns):
+            notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
+            if notice_for_el is None or 'ref' not in notice_for_el.attrib: continue
+            notice_for = notice_for_el.attrib['ref']
+
+            if only_used and notice_for not in self.notice_able_ids: continue
+
+            notice_id_el = assignment.find('./n:NoticeRef', self.ns)
+            if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
+            notice_id = notice_id_el.attrib['ref']
+
+            notice_text_el = notices.find(f'./n:Notice[@id={notice_id}]/n:Text',self.ns)
+            if notice_text_el is None: continue
+            notice_text = notice_text_el.text
+
+            con = sqlite3.connect(f'{output_folder}/netex.db')
+            cur = con.cursor()
+            cur.execute('CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, note_for TEXT NOT NULL, content TEXT NOT NULL, name TEXT)')
+            cur.execute("INSERT OR REPLACE INTO notices (id, note_for, content) VALUES (?, ?, ?)", (notice_id, notice_for, notice_text))
+            con.commit()
+            con.close()
+
+            
 
     def get(self, layers=[]):
         data = {}
