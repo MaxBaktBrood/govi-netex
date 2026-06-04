@@ -13,6 +13,7 @@ from datetime import timedelta, datetime
 import copy
 import isodate
 import sqlite3
+import random
 
 output_folder = './output'
 
@@ -617,6 +618,7 @@ class Netex:
                         return summary
         loom_route_links = {}
         if loom and route_links: loom_route_links = route_link_index(route_links)
+        print('links for loom: ' + str(len(loom_route_links)))
 
         def quay_stoppoint_assigner(el: ET.Element):
             stoppoint_el = el.find(f'./n:ScheduledStopPointRef', self.ns)
@@ -961,14 +963,16 @@ class Netex:
                                             })
 
                         if loom:
+                            journey_loom_geodata = {}
                             for index, loom_route_point in enumerate(loom_route_points):
                                 if index == 0: continue
+                                if loom_route_points[index - 1]['stopplace'] is None or loom_route_point['stopplace'] is None: break
                                 loom_route_link_id = f'{loom_route_points[index - 1]['point']} - {loom_route_point['point']}'
                                 loom_line_id = f'{loom_route_points[index - 1]['point']} - {loom_route_point['stopplace']}'
                                 if loom_route_link_id not in loom_route_links: 
-                                    print(f'LOOM: Geodata incompleet voor {loom_route_point['stopplace']}')
+                                    # print(f'LOOM: Geodata incompleet voor {loom_route_point['stopplace']}')
                                     continue
-                                loom_geodata['line_'+loom_line_id] = {
+                                journey_loom_geodata['line_'+loom_line_id] = {
                                     "type": "Feature",
                                     "geometry": {
                                         "type": "LineString",
@@ -976,10 +980,21 @@ class Netex:
                                     },
                                     "properties":{
                                         'from':loom_route_points[index - 1]['stopplace'],
-                                        'to':loom_route_point['stopplace']
+                                        'to':loom_route_point['stopplace'],
+                                        'lines':[]
                                     }
                                 }
-
+                            
+                            if len(list(journey_loom_geodata.keys())) == len(list(loom_route_points)) - 1:
+                                for key in journey_loom_geodata:
+                                    inserted_data = loom_geodata.setdefault(key, journey_loom_geodata[key])
+                                    
+                                    if journey_data['line_id'] not in list(map(lambda x: x['id'], inserted_data['properties']['lines'])):
+                                        loom_geodata[key]['properties']['lines'].append({
+                                            'color':self.loom_line_color(journey_data['line_id']),
+                                            'id':journey_data['line_id'],
+                                            'label':journey_data['line_number']
+                                        })
 
                         def add_line_properties(properties, line_data):
                             if journey_data['line_number'] is not None:
@@ -1084,7 +1099,10 @@ class Netex:
                 stop_place_code = feautre['properties']['stopplace']
                 if f'stop_{stop_place_code}' in loom_geodata: continue
 
-                loom_feature = copy.copy(feautre)
+                if feautre['properties']['stopplace'] is None: continue
+
+                loom_feature = copy.deepcopy(feautre)
+                loom_feature['geometry']['type'] = 'Point'
                 loom_feature['geometry']['coordinates'] = feautre['geometry']['coordinates'][0]
                 loom_feature['properties'] = {
                     'id':feautre['properties']['stopplace'],
@@ -1096,8 +1114,20 @@ class Netex:
                     loom_feature['properties']['station_label'] = feautre['properties']['name']
 
                 loom_geodata[f'stop_{stop_place_code}'] = loom_feature
+
+            loom_file_data = {"type": "FeatureCollection",'features':list(reversed(loom_geodata.values()))}
+
+            if crs not in ['wgs84', 'EPSG:4326']:
+                loom_file_data = gpd.GeoDataFrame.from_features(loom_file_data).set_crs(crs).to_json(na='drop', to_wgs84=True)
+            else:
+                loom_file_data = json.dumps(loom_file_data)
+
+            file_count = list(filter(
+                lambda x: x.startswith('loom'),
+                os.listdir(output_folder)
+            ))
             
-            open(f'{output_folder}/loom.json', 'w').write(json.dumps({"type": "FeatureCollection",'features':list(loom_geodata.values())}))
+            open(f'{output_folder}/loom_{len(file_count)}.json', 'w').write(loom_file_data)
 
 
         if len(stop_points_geodata['features']) == 0: return
@@ -1126,6 +1156,15 @@ class Netex:
         'datasource_code':None,
         'crs':3857, # 3857 = wgs84
     }
+
+    loom_line_colors = {}
+    def loom_line_color(self, id):
+        if id in self.loom_line_colors: return self.loom_line_colors[id]
+        r = lambda: random.randint(0, 255)
+        self.loom_line_colors[id] = '#%02X%02X%02X' % (r(), r(), r())
+        return self.loom_line_colors[id]
+
+    notice_able_ids = []
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
         if file is None and str_content is None:
