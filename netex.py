@@ -834,36 +834,6 @@ class Netex:
                                 if waittime_el is not None:
                                     wait_time = isodate.parse_duration(waittime_el.text)
 
-                        if quay and time_tracker:
-                            arrival = time_tracker.strftime("%H:%M:%S")
-
-                            if wait_time is not None:
-                                time_tracker = time_tracker + wait_time
-
-                            departure = time_tracker.strftime("%H:%M:%S")
-
-                            if driving_time is not None:
-                                time_tracker = time_tracker + driving_time
-
-                            if index == 0:
-                                journey_timestamps.append({
-                                    'quay':quay,
-                                    'arrival':None,
-                                    'departure':departure
-                                })
-                            elif index + 1 == len(points):
-                                journey_timestamps.append({
-                                    'quay':quay,
-                                    'arrival':arrival,
-                                    'departure':None
-                                })
-                            else:
-                                journey_timestamps.append({
-                                    'quay':quay,
-                                    'arrival':arrival,
-                                    'departure':departure
-                                })
-
                         # passenger_stop_assignment = service.find(f'./n:stopAssignments/n:PassengerStopAssignment/n:ScheduledStopPointRef[@ref="{stoppoint_ref.attrib['ref']}"]/..', self.ns)
                         # if passenger_stop_assignment is not None:
                         #     quay_el = passenger_stop_assignment.find('./n:QuayRef', self.ns)
@@ -877,6 +847,13 @@ class Netex:
                         point_id = None
                         if quay: point_id = quay
                         else: point_id = stoppoint_ref.attrib['ref']
+
+                        quay_properties = {
+                            'quay_name':None,
+                            'quay_code':quay,
+                            'quay_location':None,
+
+                        }
 
                         if stoppoint_ref is not None and stop_points is not None:  
                             stop_point: ET.Element = stop_points.find(f'./n:ScheduledStopPoint[@id="{stoppoint_ref.attrib['ref']}"]', self.ns)
@@ -912,6 +889,7 @@ class Netex:
                                     stop_point_name = stop_point.find("./n:Name", self.ns)
                                     if stop_point_name is not None:
                                         point_geodata['properties']['name'] = stop_point_name.text
+                                        quay_properties['quay_name'] = stop_point_name.text
 
                                     stop_area_ref_el = stop_point.find("./n:stopAreas/n:StopAreaRef", self.ns)
                                     if stop_area_ref_el is not None:
@@ -954,6 +932,8 @@ class Netex:
                                         if lng is not None and lat is not None:
                                             location = [lng.text, lat.text]
 
+                                    quay_properties['quay_location'] = ','.join(map(lambda x: str(x), location))
+
                                     if location not in stop_points_geodata['features'][point_id]['geometry']['coordinates']:
                                         stop_points_geodata['features'][point_id]['geometry']['coordinates'].append(location)
                                     
@@ -964,6 +944,35 @@ class Netex:
                                                 'point':route_point_el.attrib['ref'],
                                                 'stopplace':stop_points_geodata['features'][point_id]['properties']['stopplace']
                                             })
+
+
+                        if quay and time_tracker:
+                            arrival = time_tracker.strftime("%H:%M:%S")
+
+                            if wait_time is not None:
+                                time_tracker = time_tracker + wait_time
+
+                            departure = time_tracker.strftime("%H:%M:%S")
+
+                            if driving_time is not None:
+                                time_tracker = time_tracker + driving_time
+
+                            if index == 0:
+                                journey_timestamps.append(quay_properties | {
+                                    'arrival':None,
+                                    'departure':departure
+                                })
+                            elif index + 1 == len(points):
+                                journey_timestamps.append(quay_properties | {
+                                    'arrival':arrival,
+                                    'departure':None
+                                })
+                            else:
+                                journey_timestamps.append(quay_properties | {
+                                    'arrival':arrival,
+                                    'departure':departure
+                                })
+
 
                         if loom:
                             journey_loom_geodata = {}
@@ -1062,13 +1071,13 @@ class Netex:
             if owner_operator_el is not None:
                 owner_operator = owner_operator_el.find('./n:Value', self.ns)
                 if owner_operator is not None:
-                    journey_data['in_scope_of_operator'] = (owner_operator.text == 'true')
+                    journey_data['in_scope_of_operator'] = owner_operator.text == 'true'
 
             journey_number_el = journey.find(f'./n:privateCodes/n:PrivateCode[@type="JourneyNumber"]', self.ns)
-            if journey_number_el: journey_data['number'] = journey_number_el.text
+            if journey_number_el is not None: journey_data['number'] = journey_number_el.text
 
             realtime_info_el = journey.find(f'./n:Monitored', self.ns)
-            if realtime_info_el: journey_data['realtime_info'] = (realtime_info_el.text == 'true')
+            if realtime_info_el is not None: journey_data['realtime_info'] = (realtime_info_el.text == 'true')
 
             journeys_df = pd.DataFrame.from_dict(
                 dict(list(map(
@@ -1205,12 +1214,12 @@ class Netex:
                 pass 
 
         return data
-
+        
 
     defaults = {
         'datasource':None,
         'datasource_code':None,
-        'crs':3857, # 3857 = wgs84
+        'crs':4326, # 4326 = wgs84
     }
 
     loom_line_colors = {}
@@ -1239,7 +1248,6 @@ class Netex:
         if enum_list is not None:
             enum_list = list(map(lambda x: ET.fromstring(x), enum_list))
 
-    
         self.ns = {
             'n':'http://www.netex.org.uk/netex',
             'gml':"http://www.opengis.net/gml/3.2"
