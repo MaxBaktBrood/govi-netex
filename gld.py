@@ -12,13 +12,14 @@ import sqlite3
 from fudgeo import GeoPackage
 from epiap import Epiap
 import pandas as pd
-import shapefile
+from netex_json.netex_json import NetexJSON
 
 # Netex processing for the province of Gelderland
 
 general_folder = './gld_input/netex_general'
 data_folder = './gld_input/netex_data'
 non_netex_folder = './gld_input/other'
+output_folder = './output'
 
 network_inclusions = [
     "DOVA:TransportAdministrativeZone:SAN",
@@ -92,6 +93,8 @@ for file in os.listdir(data_folder):
             'linecode_categories':linecode_categories
         })
 
+        netex.getNotices()
+
 
 gpkg = GeoPackage('./output/netex.gpkg')
 
@@ -147,3 +150,22 @@ for table in aliasses:
         gpkg.schema.add_column_definition(
             table_name=table, column_name=column, name=aliasses[table][column]
         )
+
+# Generate JSON
+print('Genereren van JSON...')
+netex_json = NetexJSON()
+
+json_lines = netex_json.line_information()
+
+netex_json.to_json(lines=json_lines)
+
+region_data = dict(map(
+    lambda x: (x[0], x[1]),
+    pd.read_excel(f'{non_netex_folder}/Regio_Lookup.xlsx').to_records(index=None)
+))
+
+json_lines_per_network = netex_json.divide_lines_by_network(json_lines)
+json_lines_per_region = netex_json.divided_lines_per_region(json_lines_per_network, region_data)
+
+open(f'{output_folder}/lines.json', 'w').write(json.dumps(json_lines_per_region))
+# netexJSON = NetexJSON()
