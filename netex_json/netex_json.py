@@ -54,7 +54,7 @@ class NetexJSON:
             con = sqlite3.connect(f'{output_folder}/netex.db')
             cur = con.cursor()
             cur.execute('CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, note_for TEXT NOT NULL, content TEXT NOT NULL, name TEXT)')
-            line['notes'] = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (line_id)).fetchall())
+            line['notes'] = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (line_id,)).fetchall())
             con.close()
 
             line_type = line_routes['type_of_product'].iloc[0]
@@ -335,7 +335,6 @@ class NetexJSON:
             ), row))
             # line = journeys_per_line.setdefault(journey['line_id'], {})
             # line[journey['id']] = journey
-
             applied_availability_keys = cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
 
             departures = cur.execute("SELECT quay_name, quay_code, quay_location, arrival, departure FROM journey_timestamps WHERE journey = ?", (journey['id'],)).fetchall()
@@ -351,7 +350,7 @@ class NetexJSON:
             ))
 
             cur.execute('CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, note_for TEXT NOT NULL, content TEXT NOT NULL, name TEXT)')
-            journey_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (journey['id'])).fetchall())
+            journey_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (journey['id'],)).fetchall())
             entry['journey_notes'] = entry['journey_notes'] | journey_notes
 
             applied_availabilities = [
