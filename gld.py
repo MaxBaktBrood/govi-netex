@@ -93,8 +93,6 @@ for file in os.listdir(data_folder):
             'linecode_categories':linecode_categories
         })
 
-        netex.getNotices()
-
 
 gpkg = GeoPackage('./output/netex.gpkg')
 

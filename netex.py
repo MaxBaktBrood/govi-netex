@@ -1291,4 +1291,6 @@ class Netex:
 
             self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list, crs=df_crs)
 
+            self.getNotices()
+
         return
