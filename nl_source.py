@@ -8,6 +8,7 @@ from netex import Netex
 from zipfile import ZipFile
 import gzip
 import os
+from epiap import Epiap
 
 def getNetexNL(secrets: dict={}):
     if 'NL_username' not in secrets or 'NL_password' not in secrets:
@@ -72,6 +73,8 @@ def getNetexNL(secrets: dict={}):
                     gzip_file = gzip.open(io, 'r')
                     content = gzip_file.read().decode(encoding='utf-8')
                     epiap_list.append(content)
+
+            epiap_list = list(map(lambda x: Epiap(str_content=x), epiap_list))
 
             enum_list = []
 
