@@ -1191,7 +1191,7 @@ class Netex:
             if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
             notice_id = notice_id_el.attrib['ref']
 
-            notice_text_el = notices.find(f'./n:Notice[@id={notice_id}]/n:Text',self.ns)
+            notice_text_el = notices.find(f'./n:Notice[@id="{notice_id}"]/n:Text',self.ns)
             if notice_text_el is None: continue
             notice_text = notice_text_el.text
 
