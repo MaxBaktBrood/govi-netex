@@ -1253,7 +1253,7 @@ class Netex:
             'gml':"http://www.opengis.net/gml/3.2"
         }
 
-        if options: self.options = options
+        self.options = options
 
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
