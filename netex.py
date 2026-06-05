@@ -661,6 +661,7 @@ class Netex:
         if journeys is None: return print('Geen ritdata')
 
         for journey in journeys:
+            if journey.tag != f'{{{self.ns['n']}}}ServiceJourney': continue
 
             journey_data = {
                 'id':journey.attrib['id'],
@@ -1102,14 +1103,13 @@ class Netex:
                     validity_conditions.values()
                 )))
 
-                if journey_data['line_id'] is not None: # DEBUG: NOT SUPPOSED TO HAPPEN
-                    cur.execute('CREATE TABLE IF NOT EXISTS availabilities_per_journey (id INTEGER PRIMARY KEY, journey TEXT NOT NULL, availability TEXT NOT NULL, line TEXT NOT NULL)')
-                    cur.executemany("INSERT OR REPLACE INTO availabilities_per_journey VALUES (?, ?, ?, ?)", list(map(
-                        lambda x: (None, journey_data['id'], x['id'], journey_data['line_id']),
-                        validity_conditions.values()
-                    )))
-                else:
-                    print(f'Voor rit {journey_data['id']} is er geen lijn id beschikbaar!') # The case for Arriva Netex
+
+                cur.execute('CREATE TABLE IF NOT EXISTS availabilities_per_journey (id INTEGER PRIMARY KEY, journey TEXT NOT NULL, availability TEXT NOT NULL, line TEXT NOT NULL)')
+                cur.executemany("INSERT OR REPLACE INTO availabilities_per_journey VALUES (?, ?, ?, ?)", list(map(
+                    lambda x: (None, journey_data['id'], x['id'], journey_data['line_id']),
+                    validity_conditions.values()
+                )))
+
                 con.commit()
 
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
@@ -1295,6 +1295,6 @@ class Netex:
 
             self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list, crs=df_crs)
 
-            self.getNotices()
+            self.getNotices(service=service)
 
         return
