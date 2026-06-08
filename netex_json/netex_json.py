@@ -81,8 +81,14 @@ class NetexJSON:
             network_data = copy.deepcopy(self.lines_per_network[network])
             network_data['id'] = network
 
+            def modify_line(x):
+                line = copy.copy(lines[x])
+                del line['routes']
+                del line['notes']
+                return line
+
             network_data['lines'] = list(map(
-                lambda x: lines[x],
+                modify_line,
                 list(set(network_data['lines']))
             ))
 
@@ -96,8 +102,11 @@ class NetexJSON:
             network['parts'] = {}
             for line in network['lines']:
                 part = 'unknown'
-                if part in region_per_line_code:
+                if line['code'] in region_per_line_code:
                     part = region_per_line_code[line['code']]
+                else:
+                    #print(line['code'])
+                    pass
                 
                 part_entry = network['parts'].setdefault(part, {
                     'name':part,
@@ -107,7 +116,7 @@ class NetexJSON:
                 part_entry['lines'].append(line)
             
             del network['lines']
-            network['parts'] = list(network['parts'])
+            network['parts'] = list(network['parts'].values())
 
             return network
 
