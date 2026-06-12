@@ -1087,7 +1087,7 @@ class Netex:
                 )))
             )
 
-            if time_table:
+            if time_table and journey_data['line_id']: # Requiring Line ID beacuase of Flixbus problems
                 con = sqlite3.connect(f'{output_folder}/netex.db')
 
                 journeys_df.to_sql('journeys', con, if_exists='append', index=False, dtype={'id':'STRING PRIMARY KEY'})
