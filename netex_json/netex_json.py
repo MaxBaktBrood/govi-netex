@@ -374,11 +374,14 @@ class NetexJSON:
             "timetable":{}
         }
 
-
-        for row in cur.execute("SELECT * FROM journeys WHERE line_id = ?", (line_id,)).fetchall():
-            journey = dict(zip((
+        journeys = list(sorted(map(
+            lambda x: dict(zip((
                 "id","number","route","line_id","in_scope_of_operator","distance","dru","direction","line_name","line_number","network","network_id","network_code","realtime_info",
-            ), row))
+            ), x))
+            , cur.execute("SELECT * FROM journeys WHERE line_id = ?", (line_id,)).fetchall()
+        ), key=lambda x: 0 if x['number'] is None else int(x['number'])))
+
+        for journey in journeys:
             # line = journeys_per_line.setdefault(journey['line_id'], {})
             # line[journey['id']] = journey
             applied_availability_keys = cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
