@@ -22,6 +22,8 @@ def no_special_characters(str = ""):
 
 class NetexJSON:
 
+    language = 'en'
+
     lines_per_network = {}
 
     def line_information(self):
@@ -179,6 +181,41 @@ class NetexJSON:
         
         return line_group
 
+    def exceptionPresentation(self, exception):
+        if not 'type' in exception: return exception
+        presentations = {
+            'nl':{
+                'general':{
+                'NOT':'Rijdt niet op',
+                'ONLY':'Rijdt alleen op',
+                'and':'en'
+                },
+                'weekdays':{
+                    'monday':'maandag', 'tuesday':'dinsdag', 'wednesday':'woensdag', 'thursday':'donderdag', 'friday':'vrijdag', 'saturday':'zaterdag', 'sunday':'zondag'
+                }
+            },
+            'en':{'general':{
+                'NOT':'Does not run on',
+                'ONLY':'Does only run on',
+            }}
+        }
+        def present(category, key):
+            if self.language not in presentations or category not in presentations[self.language] or key not in presentations[self.language][category]:
+                return key
+            return presentations[self.language][category][key]
+        
+        if 'day' in exception:
+            exception['presentation'] = f'{present('general', exception['type'])} {present('weekdays', exception['day'])}.'
+        elif 'dates' in exception:
+            dates_to_sentence = copy.copy(exception['dates'])
+            if len(dates_to_sentence) > 1:
+                last = dates_to_sentence.pop()
+                dates_to_sentence = f'{", ".join(dates_to_sentence)} {present('general', 'and')} {last}'
+            else: dates_to_sentence = ", ".join(dates_to_sentence)
+            exception['presentation'] = f'{present('general', exception['type'])} {dates_to_sentence}.'
+
+        return exception
+    
     known_validities = {}
 
     def validity_summary(self, validity):
@@ -305,7 +342,7 @@ class NetexJSON:
                     "dates":dates
                 })
 
-            summary[category] = exceptions
+            summary[category] = list(map(lambda x: self.exceptionPresentation(x), exceptions))
 
         known_period = self.known_validities.setdefault(
             validity_period, {}
@@ -580,12 +617,14 @@ class NetexJSON:
 
         
 
-    def __init__(self):
+    def __init__(self, language=None):
         self.geo_tables = {
             'routes':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='routes'),
             'routepoints':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='routepoints'),
             'scheduled_stop_points':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='scheduled_stop_points'),
         }
+
+        self.language = language
 
 
 
