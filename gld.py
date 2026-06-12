@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import geopandas
 import pygml
-import json
+import orjson as json
 import os
 from zipfile import ZipFile
 import gzip
@@ -13,6 +13,14 @@ from fudgeo import GeoPackage
 from epiap import Epiap
 import pandas as pd
 from netex_json.netex_json import NetexJSON
+import shutil
+from datetime import datetime, timedelta
+
+last_printed_time_at = datetime.now()
+def printTime():
+    now = datetime.now()
+    diff = str(round((now - last_printed_time_at).seconds / 60))
+    return f'[{now.strftime('%H:%M')} uur | {diff} min]'
 
 # Netex processing for the province of Gelderland
 
@@ -22,8 +30,8 @@ non_netex_folder = './gld_input/other'
 output_folder = './output'
 
 network_inclusions = [
-    "DOVA:TransportAdministrativeZone:SAN",
-    "NL:DOVA:TransportAdministrativeZone:SAN",
+    # "DOVA:TransportAdministrativeZone:SAN",
+    # "NL:DOVA:TransportAdministrativeZone:SAN",
     "DOVA:TransportAdministrativeZone:VZ",
     "NL:DOVA:TransportAdministrativeZone:VZ",
     "DOVA:TransportAdministrativeZone:ACH-RIV",
@@ -34,10 +42,10 @@ network_inclusions = [
     "NL:DOVA:TransportAdministrativeZone:TW",
     "DOVA:TransportAdministrativeZone:IJV",
     "NL:DOVA:TransportAdministrativeZone:IJV",
-    "DOVA:TransportAdministrativeZone:RAIL-VD",
-    "NL:DOVA:TransportAdministrativeZone:RAIL-VD",
-    "NL:DOVA:TransportAdministrativeZone:RAIL-KZE",
-    "DOVA:TransportAdministrativeZone:RAIL-KZE",
+    # "DOVA:TransportAdministrativeZone:RAIL-VD",
+    # "NL:DOVA:TransportAdministrativeZone:RAIL-VD",
+    # "NL:DOVA:TransportAdministrativeZone:RAIL-KZE",
+    # "DOVA:TransportAdministrativeZone:RAIL-KZE",
     "DOVA:TransportAdministrativeZone:ANF",
     "NL:DOVA:TransportAdministrativeZone:ANF"
 ]
@@ -45,6 +53,9 @@ network_inclusions = [
 if not os.path.exists(general_folder): quit()
 if not os.path.exists(data_folder): quit()
 if not os.path.exists(non_netex_folder): quit()
+
+if os.path.exists(output_folder):
+    shutil.rmtree(output_folder)
 
 enum_contents = []
 epiap_contents = []
@@ -57,7 +68,7 @@ for file in os.listdir(general_folder):
         path = os.path.join(general_folder, file)
         
         split_path = os.path.splitext(path)
-        print(f'Verwerken van {split_path[0]}')
+        print(f'{printTime()} Verwerken van {split_path[0]}')
         
         file = gzip.open(path, 'r')
         content = file.read()
@@ -73,7 +84,7 @@ if epiap_contents is not None:
 linecode_categories = {}
 
 if os.path.exists(f'{non_netex_folder}/abc-lijnen.xlsx'):
-    print('Inladen ABC-categorieën')
+    print(f'{printTime()} Inladen ABC-categorieën')
     linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').replace(float('nan'), None).set_index('code')["ABC-Category"].to_dict()
 
 for file in os.listdir(data_folder):
@@ -83,7 +94,7 @@ for file in os.listdir(data_folder):
         path = os.path.join(data_folder, file)
         
         split_path = os.path.splitext(path)
-        print(f'Verwerken van {split_path[0]}')
+        print(f'{printTime()} Verwerken van {split_path[0]}')
         
         file = gzip.open(path, 'r')
         content = file.read()
@@ -150,20 +161,24 @@ for table in aliasses:
         )
 
 # Generate JSON
-print('Genereren van JSON...')
-netex_json = NetexJSON()
+print(f'{printTime()} Genereren van JSON...')
+netex_json = NetexJSON(language='nl')
 
+print(f'{printTime()} Lijninformatie aanmaken...')
 json_lines = netex_json.line_information()
 
+print(f'{printTime()} JSON-bestand per lijn maken...')
 netex_json.to_json(lines=json_lines)
 
 region_data = dict(map(
-    lambda x: (x[0], x[1]),
+    lambda x: (str(x[0]), x[1]),
     pd.read_excel(f'{non_netex_folder}/Regio_Lookup.xlsx').to_records(index=None)
 ))
+
+print(f'{printTime()} Lijnen opdelen in regio\'s en concessies...')
 
 json_lines_per_network = netex_json.divide_lines_by_network(json_lines)
 json_lines_per_region = netex_json.divided_lines_per_region(json_lines_per_network, region_data)
 
-open(f'{output_folder}/lines.json', 'w').write(json.dumps(json_lines_per_region))
+open(f'{output_folder}/lines.json', 'wb').write(json.dumps(json_lines_per_region))
 # netexJSON = NetexJSON()

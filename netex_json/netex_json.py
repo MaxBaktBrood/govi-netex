@@ -1,7 +1,7 @@
 import typing
 import pandas as pd
 import geopandas as gpd
-import json
+import orjson as json
 import sqlite3
 from datetime import datetime, timedelta
 import copy
@@ -21,6 +21,8 @@ def no_special_characters(str = ""):
     return new_str
 
 class NetexJSON:
+
+    language = 'en'
 
     lines_per_network = {}
 
@@ -78,11 +80,17 @@ class NetexJSON:
     def divide_lines_by_network(self, lines:dict):
         divided = []
         for network in self.lines_per_network:
-            network_data = copy.deepcopy(self.lines_per_network[network])
+            network_data = copy.copy(self.lines_per_network[network])
             network_data['id'] = network
 
+            def modify_line(x):
+                line = copy.copy(lines[x])
+                del line['routes']
+                del line['notes']
+                return line
+
             network_data['lines'] = list(map(
-                lambda x: lines[x],
+                modify_line,
                 list(set(network_data['lines']))
             ))
 
@@ -96,8 +104,11 @@ class NetexJSON:
             network['parts'] = {}
             for line in network['lines']:
                 part = 'unknown'
-                if part in region_per_line_code:
+                if line['code'] in region_per_line_code:
                     part = region_per_line_code[line['code']]
+                else:
+                    #print(line['code'])
+                    pass
                 
                 part_entry = network['parts'].setdefault(part, {
                     'name':part,
@@ -107,7 +118,7 @@ class NetexJSON:
                 part_entry['lines'].append(line)
             
             del network['lines']
-            network['parts'] = list(network['parts'])
+            network['parts'] = list(network['parts'].values())
 
             return network
 
@@ -131,10 +142,10 @@ class NetexJSON:
             v_from = datetime.fromisoformat(validity['from'])
             v_to = datetime.fromisoformat(validity['through'])
 
-            cut_from = copy.copy(v_from)
+            cut_from = v_from
             cut_bits = ''
 
-            counter = copy.copy(v_from)
+            counter = v_from
 
             for bit in validity['bits']:
                 if counter in cutting_points and cut_bits != '':
@@ -150,7 +161,7 @@ class NetexJSON:
                         'bits':cut_bits
                     }
 
-                    cut_from = copy.copy(counter)
+                    cut_from = counter
                     cut_bits = ''
 
                 cut_bits += bit
@@ -170,6 +181,41 @@ class NetexJSON:
         
         return line_group
 
+    def exceptionPresentation(self, exception):
+        if not 'type' in exception: return exception
+        presentations = {
+            'nl':{
+                'general':{
+                'NOT':'Rijdt niet op',
+                'ONLY':'Rijdt alleen op',
+                'and':'en'
+                },
+                'weekdays':{
+                    'monday':'maandag', 'tuesday':'dinsdag', 'wednesday':'woensdag', 'thursday':'donderdag', 'friday':'vrijdag', 'saturday':'zaterdag', 'sunday':'zondag'
+                }
+            },
+            'en':{'general':{
+                'NOT':'Does not run on',
+                'ONLY':'Does only run on',
+            }}
+        }
+        def present(category, key):
+            if self.language not in presentations or category not in presentations[self.language] or key not in presentations[self.language][category]:
+                return key
+            return presentations[self.language][category][key]
+        
+        if 'day' in exception:
+            exception['presentation'] = f'{present('general', exception['type'])} {present('weekdays', exception['day'])}.'
+        elif 'dates' in exception:
+            dates_to_sentence = copy.copy(exception['dates'])
+            if len(dates_to_sentence) > 1:
+                last = dates_to_sentence.pop()
+                dates_to_sentence = f'{", ".join(dates_to_sentence)} {present('general', 'and')} {last}'
+            else: dates_to_sentence = ", ".join(dates_to_sentence)
+            exception['presentation'] = f'{present('general', exception['type'])} {dates_to_sentence}.'
+
+        return exception
+    
     known_validities = {}
 
     def validity_summary(self, validity):
@@ -191,7 +237,7 @@ class NetexJSON:
         }
 
         from_date = datetime.fromisoformat(validity['from'])
-        date_tracker = copy.copy(from_date)
+        date_tracker = from_date
 
         for bit in validity['bits']:
             weekday = date_tracker.weekday()
@@ -252,7 +298,7 @@ class NetexJSON:
             for date in validities_per_date:
                 if weekday in workdays_excepted: continue
 
-                category = copy.copy(weekday)
+                category = weekday
                 if category != 'saturday' and category != 'sun- and holidays':
                     category = 'monday through friday'
 
@@ -296,7 +342,7 @@ class NetexJSON:
                     "dates":dates
                 })
 
-            summary[category] = exceptions
+            summary[category] = list(map(lambda x: self.exceptionPresentation(x), exceptions))
 
         known_period = self.known_validities.setdefault(
             validity_period, {}
@@ -328,11 +374,14 @@ class NetexJSON:
             "timetable":{}
         }
 
-
-        for row in cur.execute("SELECT * FROM journeys WHERE line_id = ?", (line_id,)).fetchall():
-            journey = dict(zip((
+        journeys = list(sorted(map(
+            lambda x: dict(zip((
                 "id","number","route","line_id","in_scope_of_operator","distance","dru","direction","line_name","line_number","network","network_id","network_code","realtime_info",
-            ), row))
+            ), x))
+            , cur.execute("SELECT * FROM journeys WHERE line_id = ?", (line_id,)).fetchall()
+        ), key=lambda x: 0 if x['number'] is None else int(x['number'])))
+
+        for journey in journeys:
             # line = journeys_per_line.setdefault(journey['line_id'], {})
             # line[journey['id']] = journey
             applied_availability_keys = cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
@@ -562,7 +611,7 @@ class NetexJSON:
             
             line_json = {'line':lines[line]} | self.line_timetable(line)
 
-            open(f'{output_folder}/json-timetables/{filename}.json', 'w').write(json.dumps(line_json))
+            open(f'{output_folder}/json-timetables/{filename}.json', 'wb').write(json.dumps(line_json))
         
 
         
@@ -571,12 +620,14 @@ class NetexJSON:
 
         
 
-    def __init__(self):
+    def __init__(self, language=None):
         self.geo_tables = {
             'routes':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='routes'),
             'routepoints':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='routepoints'),
             'scheduled_stop_points':gpd.GeoDataFrame.from_file('./output/netex.gpkg', layer='scheduled_stop_points'),
         }
+
+        self.language = language
 
 
 
