@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 import geopandas as gpd
 import pandas as pd
 import pygml
-import json
+import orjson as json
 import os
 from zipfile import ZipFile
 import gzip
@@ -787,7 +787,7 @@ class Netex:
                         time_tracker = datetime.strptime(journey.find('./n:DepartureTime', self.ns).text, "%H:%M:%S")
 
                     time_in_service = {
-                        'from':copy.deepcopy(time_tracker),
+                        'from':time_tracker,
                         'to':None
                     }
 
@@ -1141,7 +1141,7 @@ class Netex:
 
                 if feautre['properties']['stopplace'] is None: continue
 
-                loom_feature = copy.deepcopy(feautre)
+                loom_feature = copy.copy(feautre)
                 loom_feature['geometry']['type'] = 'Point'
                 loom_feature['geometry']['coordinates'] = feautre['geometry']['coordinates'][0]
                 loom_feature['properties'] = {
@@ -1160,7 +1160,7 @@ class Netex:
             if crs not in ['wgs84', 'EPSG:4326']:
                 loom_file_data = gpd.GeoDataFrame.from_features(loom_file_data).set_crs(crs).to_json(na='drop', to_wgs84=True)
             else:
-                loom_file_data = json.dumps(loom_file_data)
+                loom_file_data = json.dumps(loom_file_data).decode()
 
             file_count = list(filter(
                 lambda x: x.startswith('loom'),
@@ -1289,10 +1289,12 @@ class Netex:
 
             if service is None: continue
 
+            print('Processing routes')
             self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
 
             if timetable is None: continue
 
+            print('Processing journeys')
             self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list, crs=df_crs)
 
             self.getNotices(service=service)

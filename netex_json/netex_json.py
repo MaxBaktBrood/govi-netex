@@ -1,7 +1,7 @@
 import typing
 import pandas as pd
 import geopandas as gpd
-import json
+import orjson as json
 import sqlite3
 from datetime import datetime, timedelta
 import copy
@@ -80,7 +80,7 @@ class NetexJSON:
     def divide_lines_by_network(self, lines:dict):
         divided = []
         for network in self.lines_per_network:
-            network_data = copy.deepcopy(self.lines_per_network[network])
+            network_data = copy.copy(self.lines_per_network[network])
             network_data['id'] = network
 
             def modify_line(x):
@@ -142,10 +142,10 @@ class NetexJSON:
             v_from = datetime.fromisoformat(validity['from'])
             v_to = datetime.fromisoformat(validity['through'])
 
-            cut_from = copy.copy(v_from)
+            cut_from = v_from
             cut_bits = ''
 
-            counter = copy.copy(v_from)
+            counter = v_from
 
             for bit in validity['bits']:
                 if counter in cutting_points and cut_bits != '':
@@ -161,7 +161,7 @@ class NetexJSON:
                         'bits':cut_bits
                     }
 
-                    cut_from = copy.copy(counter)
+                    cut_from = counter
                     cut_bits = ''
 
                 cut_bits += bit
@@ -237,7 +237,7 @@ class NetexJSON:
         }
 
         from_date = datetime.fromisoformat(validity['from'])
-        date_tracker = copy.copy(from_date)
+        date_tracker = from_date
 
         for bit in validity['bits']:
             weekday = date_tracker.weekday()
@@ -298,7 +298,7 @@ class NetexJSON:
             for date in validities_per_date:
                 if weekday in workdays_excepted: continue
 
-                category = copy.copy(weekday)
+                category = weekday
                 if category != 'saturday' and category != 'sun- and holidays':
                     category = 'monday through friday'
 
@@ -611,7 +611,7 @@ class NetexJSON:
             
             line_json = {'line':lines[line]} | self.line_timetable(line)
 
-            open(f'{output_folder}/json-timetables/{filename}.json', 'w').write(json.dumps(line_json))
+            open(f'{output_folder}/json-timetables/{filename}.json', 'wb').write(json.dumps(line_json))
         
 
         
