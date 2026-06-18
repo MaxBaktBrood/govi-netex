@@ -7,3 +7,4 @@ gld_input/**
 output/**
 runtime.txt
 netex_json/__pycache__/**
+input/**
