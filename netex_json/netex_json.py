@@ -384,7 +384,10 @@ class NetexJSON:
         for journey in journeys:
             # line = journeys_per_line.setdefault(journey['line_id'], {})
             # line[journey['id']] = journey
-            applied_availability_keys = cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
+            applied_availability_keys = list(map(
+                lambda x: x[0],
+                cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
+            ))
 
             departures = cur.execute("SELECT quay_name, quay_code, quay_location, arrival, departure FROM journey_timestamps WHERE journey = ?", (journey['id'],)).fetchall()
             departures = list(map(
@@ -402,16 +405,24 @@ class NetexJSON:
             journey_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (journey['id'],)).fetchall())
             entry['journey_notes'] = entry['journey_notes'] | journey_notes
 
-            applied_availabilities = [
-                x for xs in list(map(
-                lambda key: list(availabilities[key[0]].values()),
-                applied_availability_keys
-                )) for x in xs
-            ]
+            applied_availabilities = {}
+
+            for upper_key in applied_availability_keys:
+                for lower_key in availabilities[upper_key]:
+                    applied_availabilities[f'{upper_key}_{lower_key}'] = availabilities[upper_key][lower_key]
+
+            # applied_availabilities = [
+            #     x for xs in list(map(
+            #     lambda key: list(availabilities[key[0]].values()),
+            #     applied_availability_keys
+            #     )) for x in xs
+            # ]
             
-            for index, validity in enumerate(applied_availabilities):
+            for key in applied_availabilities:
+                validity = applied_availabilities[key]
+                
                 validity_period = entry['timetable'].setdefault(
-                    f'validity_{index}', validity | {"directions":{}}
+                    f'validity_{key}', validity | {"directions":{}}
                 )
                 direction_key = validity_period['directions'].setdefault(journey['direction'], {})
 
