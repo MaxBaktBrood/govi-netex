@@ -18,6 +18,9 @@ import random
 output_folder = './output'
 
 class Netex:
+
+    con = None
+
     def line_information(self, line: ET.Element, resource:ET.Element, route_data={}, enum_list:list[ET.Element]| None=None) -> dict:
         route_data['line_id'] = line.attrib['id']
 
@@ -1086,16 +1089,19 @@ class Netex:
             )
 
             if time_table:
-                con = sqlite3.connect(f'{output_folder}/netex.db')
+                if self.con is None:
+                    self.con = sqlite3.connect(f'{output_folder}/netex.db')
 
-                journeys_df.to_sql('journeys', con, if_exists='append', index=False, dtype={'id':'STRING PRIMARY KEY'})
+                journeys_df.to_sql('journeys', self.con, if_exists='append', index=False, dtype={'id':'STRING PRIMARY KEY'})
 
                 journey_timestamps_df = pd.DataFrame.from_records(journey_timestamps)
                 journey_timestamps_df.insert(0, 'journey', '')
                 journey_timestamps_df['journey'] = journey_data['id']
-                journey_timestamps_df.to_sql('journey_timestamps', con, if_exists='append', index=False)
-                cur = con.cursor()
+                journey_timestamps_df.to_sql('journey_timestamps', self.con, if_exists='append', index=False)
+                cur = self.con.cursor()
+                cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS i_journeys ON journeys (id)')
                 cur.execute('CREATE TABLE IF NOT EXISTS availabilities (id TEXT PRIMARY KEY, available_from TEXT, available_through TEXT, bits TEXT)')
+                cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS i_availabilities ON availabilities (id)')
                 cur.executemany("INSERT OR REPLACE INTO availabilities VALUES (?, ?, ?, ?)", list(map(
                     lambda x: (x['id'], x['from'], x['through'], x['bits']),
                     validity_conditions.values()
@@ -1103,18 +1109,18 @@ class Netex:
 
 
                 cur.execute('CREATE TABLE IF NOT EXISTS availabilities_per_journey (id INTEGER PRIMARY KEY, journey TEXT NOT NULL, availability TEXT NOT NULL, line TEXT NOT NULL)')
+                cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS i_availabilities_per_journey ON availabilities_per_journey (id)')
                 cur.executemany("INSERT OR REPLACE INTO availabilities_per_journey VALUES (?, ?, ?, ?)", list(map(
                     lambda x: (None, journey_data['id'], x['id'], journey_data['line_id']),
                     validity_conditions.values()
                 )))
 
-                con.commit()
 
             # time_demand_type_ref = journey.find('./n:TimeDemandTypeRef', self.ns)
             # if time_demand_type_ref is not None and time_demand_types is not None:
             #     ref = time_demand_type_ref.attrib['ref']
             #     time_demand = time_demand_types.find(f'./n:TimeDemandType[@id="{ref}"]', self.ns)
-                con.close()
+
 
         stop_points_geodata['features'] = list(stop_points_geodata['features'].values())
 
@@ -1155,7 +1161,7 @@ class Netex:
 
             loom_file_data = {"type": "FeatureCollection",'features':list(reversed(loom_geodata.values()))}
 
-            if crs not in ['wgs84', 'EPSG:4326']:
+            if crs not in ['wgs84', 'EPSG:4326'] and len(loom_file_data['features']) > 0:
                 loom_file_data = gpd.GeoDataFrame.from_features(loom_file_data).set_crs(crs).to_json(na='drop', to_wgs84=True)
             else:
                 loom_file_data = json.dumps(loom_file_data).decode()
@@ -1176,11 +1182,19 @@ class Netex:
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
+        if self.con:
+            self.con.commit()
+            self.con.close()
+            self.con = None
+
     def getNotices(self, service:ET.Element, only_used=True):
         notices = service.find('./n:notices', self.ns)
         notice_assignments = service.find('./n:noticeAssignments', self.ns)
 
         if notices is None or notice_assignments is None: return
+
+        con = sqlite3.connect(f'{output_folder}/netex.db')
+        cur = con.cursor()
 
         for assignment in notice_assignments.findall('./*', self.ns):
             notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
@@ -1197,12 +1211,12 @@ class Netex:
             if notice_text_el is None: continue
             notice_text = notice_text_el.text
 
-            con = sqlite3.connect(f'{output_folder}/netex.db')
-            cur = con.cursor()
+            
             cur.execute('CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, note_for TEXT NOT NULL, content TEXT NOT NULL, name TEXT)')
+            cur.execute('CREATE UNIQUE INDEX IF NOT EXISTS i_notices ON notices (id)')
             cur.execute("INSERT OR REPLACE INTO notices (id, note_for, content) VALUES (?, ?, ?)", (notice_id, notice_for, notice_text))
-            con.commit()
-            con.close()
+        con.commit()
+        con.close()
 
             
 
