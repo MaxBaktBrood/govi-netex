@@ -1088,7 +1088,7 @@ class Netex:
                 )))
             )
 
-            if time_table:
+            if time_table and journey_data['line_id']:
                 if self.con is None:
                     self.con = sqlite3.connect(f'{output_folder}/netex.db')
 
