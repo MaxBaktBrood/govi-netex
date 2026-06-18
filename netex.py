@@ -211,6 +211,20 @@ class Netex:
     def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
         routes = service.find('./n:routes', self.ns)
 
+        output_data = {
+            'routes':None,
+            'routepoints':None,
+        }
+
+        def save():
+            if output_data['routes'] is not None:
+                output_data['routes'].to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
+                output_data['routes'] = None
+            
+            if output_data['routepoints'] is not None:
+                output_data['routepoints'].to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
+                output_data['routepoints'] = None
+
         # fallback 1: GERMANY
         if routes is None:
             for pattern in service.findall('./n:journeyPatterns/n:ServiceJourneyPattern[n:RouteView]', self.ns):
@@ -312,19 +326,29 @@ class Netex:
                 line_geodata['properties'] = route_data
                 points_geodata['properties'] = route_data
 
-                line_gdf = gpd.GeoDataFrame.from_features(
-                    features=[line_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
-
-                line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
-
-                points_gdf = gpd.GeoDataFrame.from_features(
+                if output_data['routes'] is None:
+                    output_data['routes'] = gpd.GeoDataFrame.from_features(
+                        features=[line_geodata]
+                    ).set_crs(crs).to_crs(self.defaults['crs'])
+                else:
+                    output_data['routes'] = pd.concat([output_data['routes'], 
+                        gpd.GeoDataFrame.from_features(
+                        features=[line_geodata]
+                        ).set_crs(crs).to_crs(self.defaults['crs'])
+                    ])
+                
+                if output_data['routepoints'] is None:
+                    output_data['routepoints'] = gpd.GeoDataFrame.from_features(
                     features=[points_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
-
-                points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
-
-
+                    ).set_crs(crs).to_crs(self.defaults['crs'])
+                else:
+                    output_data['routepoints'] = pd.concat([output_data['routepoints'], 
+                        gpd.GeoDataFrame.from_features(
+                        features=[points_geodata]
+                        ).set_crs(crs).to_crs(self.defaults['crs'])
+                    ])
+            save()
+            
         # fallback 2: AUSTRIA
         service_journeys = None
         if timetable is not None:
@@ -419,11 +443,18 @@ class Netex:
 
                 line_geodata['properties'] = route_data
 
-                line_gdf = gpd.GeoDataFrame.from_features(
-                    features=[line_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
-                line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
+                if output_data['routes'] is None:
+                    output_data['routes'] = gpd.GeoDataFrame.from_features(
+                        features=[line_geodata]
+                    ).set_crs(crs).to_crs(self.defaults['crs'])
+                else:
+                    output_data['routes'] = pd.concat([output_data['routes'], 
+                        gpd.GeoDataFrame.from_features(
+                        features=[line_geodata]
+                        ).set_crs(crs).to_crs(self.defaults['crs'])
+                    ])
 
+            save()
             return
 
         if routes is None: 
@@ -564,18 +595,29 @@ class Netex:
             line_geodata['properties'] = route_data
             points_geodata['properties'] = route_data
 
-            line_gdf = gpd.GeoDataFrame.from_features(
-                features=[line_geodata]
-            ).set_crs(crs).to_crs(self.defaults['crs'])
-
-            line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
-
-            points_gdf = gpd.GeoDataFrame.from_features(
+            if output_data['routes'] is None:
+                output_data['routes'] = gpd.GeoDataFrame.from_features(
+                    features=[line_geodata]
+                ).set_crs(crs).to_crs(self.defaults['crs'])
+            else:
+                output_data['routes'] = pd.concat([output_data['routes'], 
+                    gpd.GeoDataFrame.from_features(
+                    features=[line_geodata]
+                    ).set_crs(crs).to_crs(self.defaults['crs'])
+                ])
+            
+            if output_data['routepoints'] is None:
+                output_data['routepoints'] = gpd.GeoDataFrame.from_features(
                 features=[points_geodata]
-            ).set_crs(crs).to_crs(self.defaults['crs'])
+                ).set_crs(crs).to_crs(self.defaults['crs'])
+            else:
+                output_data['routepoints'] = pd.concat([output_data['routepoints'], 
+                    gpd.GeoDataFrame.from_features(
+                    features=[points_geodata]
+                    ).set_crs(crs).to_crs(self.defaults['crs'])
+                ])
 
-            points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
-        
+        save()
         return
 
     # def getEpiapQuay(self, ref:str, epiap_list:list[ET.Element]=[]):
