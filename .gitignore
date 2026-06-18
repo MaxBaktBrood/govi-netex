@@ -6,3 +6,4 @@ __pycache__/**
 gld_input/**
 output/**
 runtime.txt
+netex_json/__pycache__/**
