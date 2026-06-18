@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+from lxml import etree as ET
 import geopandas as gpd
 import pandas as pd
 import pygml
@@ -496,10 +496,13 @@ class Netex:
 
             previous_routepoint = None
 
+            routepoints = service.find(f"./n:routePoints", self.ns)
+            routelinks = service.find(f"./n:routeLinks", self.ns)
+
             for point in points:
                 routepoint_ref = point.find('./n:RoutePointRef', self.ns).attrib['ref']
                 routepoint = None
-                routepoint_location = service.find(f"./n:routePoints/n:RoutePoint[@id='{routepoint_ref}']/n:Location", self.ns)
+                routepoint_location = routepoints.find(f"./n:RoutePoint[@id='{routepoint_ref}']/n:Location", self.ns)
 
                 if routepoint_location is not None:
                     gml = routepoint_location.find("./gml:pos", self.ns)
@@ -531,7 +534,7 @@ class Netex:
                     continue
                 
                 routelink_ref = routelink_el.attrib['ref']
-                routelink = pygml.parse(ET.tostring(service.find(f"./n:routeLinks/n:RouteLink[@id='{routelink_ref}']/gml:LineString", self.ns)))
+                routelink = pygml.parse(ET.tostring(routelinks.find(f"./n:RouteLink[@id='{routelink_ref}']/gml:LineString", self.ns)))
                 line_geodata['geometry']['coordinates'].append(dict(routelink.__geo_interface__)['coordinates'])
             
             if len(line_geodata['geometry']['coordinates']) == 0:
@@ -616,6 +619,14 @@ class Netex:
         route_links = service.find(f"./n:routeLinks", self.ns) #only for loom
         stop_areas = service.find('./n:stopAreas', self.ns)
         availability_conditions = timetable.find('./n:contentValidityConditions', self.ns)
+        responsibility_sets = resource.find('./n:responsibilitySets', self.ns)
+        transport_administrative_zones = []
+
+        if enum_list is not None:
+            for enum in enum_list:
+                compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+                for compositeFrame in compositeFrames:
+                    transport_administrative_zones = transport_administrative_zones + compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone", self.ns)
 
         def route_link_index(route_links: ET.Element):
                         summary = {}
@@ -626,7 +637,7 @@ class Netex:
                             summary[f'{link_from} - {link_to}'] = dict(geodata.__geo_interface__)['coordinates']
                         return summary
         loom_route_links = {}
-        if loom and route_links: loom_route_links = route_link_index(route_links)
+        if loom and route_links is not None: loom_route_links = route_link_index(route_links)
         print('links for loom: ' + str(len(loom_route_links)))
 
         def quay_stoppoint_assigner(el: ET.Element):
@@ -658,7 +669,7 @@ class Netex:
         if journeys is None: return
 
         vehicle_types = None
-        if resource:
+        if resource is not None:
             vehicle_types = resource.find('./n:vehicleTypes', self.ns)
 
         if journeys is None: return print('No journey data')
@@ -745,7 +756,7 @@ class Netex:
                                 journey_data['line_number'] = line_number
                             
                                 if 'responsibilitySetRef' in line.attrib:
-                                    responsibility_el = resource.find(f"./n:responsibilitySets/n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
+                                    responsibility_el = responsibility_sets.find(f"./n:ResponsibilitySet[@id='{line.attrib['responsibilitySetRef']}']/n:roles", self.ns)
                                     if responsibility_el is not None:
                                         for role in responsibility_el:
                                             roletypes = role.find('./n:StakeholderRoleType', self.ns)
@@ -754,19 +765,18 @@ class Netex:
                                             if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
                                                 area = role.find('./n:ResponsibleAreaRef', self.ns)
 
-                                                if area is not None and enum_list is not None:
-                                                    for enum in enum_list:
-                                                        compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                                                        for compositeFrame in compositeFrames:
-                                                            area_el = compositeFrame.find(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone[@id='{area.attrib['ref']}']", self.ns)
-                                                            if area_el is not None:
-                                                                journey_data['network_id'] = area_el.attrib['id']
-                                                                name = area_el.find('./n:Name', self.ns)
-                                                                if name is not None:
-                                                                    journey_data['network'] = name.text
-                                                                code = area_el.find('./n:ShortName', self.ns)
-                                                                if code is not None:
-                                                                    journey_data['network_code'] = code.text
+                                                if area is not None:
+                                                    for zone in transport_administrative_zones:
+                                                        if 'id' not in zone.attrib or zone.attrib['id'] != area.attrib['ref']: continue
+                                                        area_el = zone
+                                                        if area_el is not None:
+                                                            journey_data['network_id'] = area_el.attrib['id']
+                                                            name = area_el.find('./n:Name', self.ns)
+                                                            if name is not None:
+                                                                journey_data['network'] = name.text
+                                                            code = area_el.find('./n:ShortName', self.ns)
+                                                            if code is not None:
+                                                                journey_data['network_code'] = code.text
 
                                                 if journey_data['network'] is None:
                                                     journey_data['network'] = area.attrib['ref']
@@ -811,11 +821,15 @@ class Netex:
                             continue
                         
                         stoppoint_ref = point.find('./n:ScheduledStopPointRef', self.ns)
+                        scheduled_point_id = None
                         quay = None
 
                         if stoppoint_ref is not None and 'ref' in stoppoint_ref.attrib:
                             if stoppoint_ref.attrib['ref'] in quays_per_stoppoint:
                                 quay = quays_per_stoppoint[stoppoint_ref.attrib['ref']]
+
+                            scheduled_point_id = stoppoint_ref.attrib['ref']
+                            self.notice_able_ids.append(scheduled_point_id)
 
                         driving_time = None
                         wait_time = None
@@ -846,7 +860,13 @@ class Netex:
                         #     else:
                         #         print('Geen quay voor ' + stoppoint_ref.attrib['ref'])
                         # else: print('Geen PSA voor ' + stoppoint_ref.attrib['ref'])
+
+                        pattern_point_id = None
                         
+                        
+                        if 'id' in point.attrib:
+                            pattern_point_id = point.attrib['id']
+                            self.notice_able_ids.append(point.attrib['id'])
                         
                         point_id = None
                         if quay: point_id = quay
@@ -940,6 +960,8 @@ class Netex:
                                             })
 
                         quay_properties = {
+                            'pattern_point_id':pattern_point_id,
+                            'scheduled_point_id':scheduled_point_id,
                             'quay_name':stop_points_geodata['features'][point_id]['properties']['name'],
                             'quay_code':quay,
                             'quay_location':','.join(map(lambda x: str(x), next(iter(stop_points_geodata['features'][point_id]['geometry']['coordinates']), []))),
@@ -1088,7 +1110,7 @@ class Netex:
                 )))
             )
 
-            if time_table:
+            if time_table and journey_data['line_id']:
                 if self.con is None:
                     self.con = sqlite3.connect(f'{output_folder}/netex.db')
 
@@ -1253,12 +1275,14 @@ class Netex:
 
         if not os.path.exists(output_folder):
             os.mkdir(output_folder)
+
+        parser = ET.XMLParser(ns_clean=True)
         
         if file is not None:
-            tree = ET.parse(file)
+            tree = ET.parse(file, parser)
             self.root = tree.getroot()
         else:
-            tree = ET.fromstring(str_content)
+            tree = ET.fromstring(str_content, parser)
             self.root = tree
         
         if enum_list is not None:
