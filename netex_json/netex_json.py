@@ -351,27 +351,28 @@ class NetexJSON:
 
         return summary
      
+
     def line_timetable(self, line_id):
         con = sqlite3.connect(f'{data_folder}/netex.db')
         cur = con.cursor()
 
         availabilities = cur.execute("SELECT * FROM availabilities WHERE id IN (SELECT availability FROM availabilities_per_journey WHERE line = ?)", (line_id,)).fetchall()
 
-        availabilities = list(map(
-                lambda x: {
-                    'id':x[0],
+        availabilities = dict(map(
+                lambda x: (x[0], {
                     'available_from':x[1],
                     'available_through':x[2],
                     'bits':x[3],
-                }
+                })
         , availabilities))
-
-        availabilities = self.cut_availabilities(availabilities)
 
         entry = {
             "quays":{},
-            "journey_notes":{},
+            "notes":{},
+            "availabilities":availabilities,
+            "vehicles":{},
             "timetable":{}
+            
         }
 
         journeys = list(sorted(map(
@@ -382,230 +383,70 @@ class NetexJSON:
         ), key=lambda x: 0 if x['number'] is None else int(x['number'])))
 
         for journey in journeys:
-            # line = journeys_per_line.setdefault(journey['line_id'], {})
-            # line[journey['id']] = journey
             applied_availability_keys = list(map(
                 lambda x: x[0],
                 cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
             ))
-
-            departures = cur.execute("SELECT quay_name, quay_code, quay_location, arrival, departure FROM journey_timestamps WHERE journey = ?", (journey['id'],)).fetchall()
+        
+            departures = cur.execute("SELECT pattern_point_id, scheduled_point_id, quay_name, quay_code, quay_location, arrival, departure FROM journey_timestamps WHERE journey = ?", (journey['id'],)).fetchall()
             departures = list(map(
                 lambda x: {
-                    'quay_name':x[0],
-                    'quay_code':x[1],
-                    'quay_location':list(map(lambda x: float(x), x[2].split(','))),
-                    'arrival':x[3],
-                    'departure':x[4],
+                    'pattern_point_id':x[0],
+                    'scheduled_point_id':x[1],
+                    'quay_name':x[2],
+                    'quay_code':x[3],
+                    'quay_location':list(map(lambda x: float(x), x[4].split(','))),
+                    'arrival':x[5],
+                    'departure':x[6],
                 },
                 departures
             ))
 
             cur.execute('CREATE TABLE IF NOT EXISTS notices (id TEXT PRIMARY KEY, note_for TEXT NOT NULL, content TEXT NOT NULL, name TEXT)')
             journey_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (journey['id'],)).fetchall())
-            entry['journey_notes'] = entry['journey_notes'] | journey_notes
+            entry['notes'] = entry['notes'] | journey_notes
 
-            applied_availabilities = {}
+            direction = entry['timetable'].setdefault(journey['direction'], {})
 
-            for upper_key in applied_availability_keys:
-                for lower_key in availabilities[upper_key]:
-                    applied_availabilities[f'{upper_key}_{lower_key}'] = availabilities[upper_key][lower_key]
+            for index, departure in enumerate(departures):
+                quay = direction.setdefault(departure['quay_code'], [])
 
-            # applied_availabilities = [
-            #     x for xs in list(map(
-            #     lambda key: list(availabilities[key[0]].values()),
-            #     applied_availability_keys
-            #     )) for x in xs
-            # ]
-            
-            for key in applied_availabilities:
-                validity = applied_availabilities[key]
-                
-                validity_period = entry['timetable'].setdefault(
-                    f'validity_{key}', validity | {"directions":{}}
-                )
-                direction_key = validity_period['directions'].setdefault(journey['direction'], {})
-
-                exceptions_per_category = self.validity_summary(validity)
-                for category_key in exceptions_per_category:
-                    if exceptions_per_category[category_key] == None:
-                        category = direction_key.setdefault(category_key, {
-                            'exceptions':exceptions_per_category[category_key],
-                            'quays':{}
-                        })
-                        continue
-
-                    category = direction_key.setdefault(category_key, {
-                        'exceptions':exceptions_per_category[category_key],
-                        'quays':{}
-                    })
-
-                    for index, departure in enumerate(departures):
-                        quay = category['quays'].setdefault(departure['quay_code'], {})
-
-                        quay_in_entry = entry['quays'].setdefault(departure['quay_code'], {
-                            'quay_name':departure['quay_name'],
-                            'quay_code':departure['quay_code'],
-                            'quay_location':departure['quay_location'],
-                            'known_orders':{}
-                        })
-                        quay_direction_orders = quay_in_entry['known_orders'].setdefault(
-                            journey['direction'], {}
-                        )
-                        index_count = quay_direction_orders.setdefault(index, 0)
-                        quay_direction_orders[index] += 1
-
-                        if departure['departure']:
-                            quay[departure['departure']] = {
-                                'journey_number':journey['number'],
-                                'notes':list(journey_notes.keys()),
-                                # 'vehicle_type':journey['vehicle_type'],
-                                'route':journey['route']
-                            }
-                        elif departure['arrival']:
-                            quay[departure['arrival']] = {
-                                'journey_number':journey['number'],
-                                'notes':list(journey_notes.keys()),
-                                # 'vehicle_type':journey['vehicle_type'],
-                                'route':journey['route']
-                            }
-
-                # journey_stops = direction.setdefault(journey['number'], {
-                #     "departures":journey['departures'],
-                #     "categories":validity_summary(validity)
-                # })
-        
-        con.close()
-
-        quays_overview = []
-        quay_order = {}
-        for quay in entry['quays']:
-
-            for key in entry['quays'][quay]['known_orders']:
-                def avg(list = []):
-                        return sum(list) / len(list)
-                order = avg(
-                    [
-                        z
-                        for zs in map(
-                            lambda x: [x[0]] * x[1],
-                            entry['quays'][quay]['known_orders'][key].items()
-                        )
-                        for z in zs
-                    ]
-                )
-                
-                quay_order.setdefault(key, {})
-                quay_order[key][quay] = order
-
-            del entry['quays'][quay]['known_orders']
-
-            quays_overview.append(
-                {'id':quay} | entry['quays'][quay]
-            )
-        entry['quays'] = quays_overview
-
-        for direction in quay_order:
-            quay_order[direction] = list(map(
-                lambda x: x[0],
-                sorted(quay_order[direction].items(),
-                key=lambda y: y[1])
-            ))
-
-        validity_list = []
-
-        for validity in entry['timetable']:
-            validity_details = entry['timetable'][validity]
-            directions = copy.copy(validity_details['directions'])
-            del validity_details['directions'] # not required because of overwrite but to make it clear
-            direction_lists = []
-
-            for direction_key in directions:
-                periods = directions[direction_key]
-                period_lists = []
-
-                for period_key in periods:
-                    period = periods[period_key]
-                    quays = period['quays']
-                    quay_list = []
-
-                    if len(quays) == 0:
-                        period['quays'] = quay_list
-
-                        period_lists.append({
-                            'period':period_key
-                        } | period)
-
-                        continue
-
-                    period['journey_numbers'] = []
-
-                    for quay_key in quays:
-                        quay = quays[quay_key]
-                        for timestamp in quay:
-                            period['journey_numbers'].append(quay[timestamp]['journey_number'])
-
-                    period['journey_numbers'] = sorted(list(set(period['journey_numbers'])))
-
-                    period['journey_notes'] = [None] * len(period['journey_numbers'])
-
-                    period['journey_routes'] = [None] * len(period['journey_numbers'])
-
-                    for quay_key in quay_order[direction_key]:
-                        if not quay_key in quays:
-                            quay_list.append(None)
-                            continue
-
-                        quay = quays[quay_key]
-                        timestamp_list = list(map(lambda _: None, period['journey_numbers']))
-
-                        for timestamp in quay:
-                            timestamp_list[
-                                period['journey_numbers'].index(quay[timestamp]['journey_number'])
-                            ] = datetime.strptime(timestamp, "%H:%M:%S").strftime("%H:%M")
-
-                            period['journey_notes'][
-                                period['journey_numbers'].index(quay[timestamp]['journey_number'])
-                            ] = quay[timestamp]['notes']
-
-                            period['journey_routes'][
-                                period['journey_numbers'].index(quay[timestamp]['journey_number'])
-                            ] = quay[timestamp]['route']
-                            
-
-                        # timestamp_list = sorted(
-                        #     list(map(
-                        #         lambda x: datetime.strptime(x, "%H:%M:%S").strftime("%H:%M"),
-                        #         list(quays[quay_key].keys())
-                        #     )),
-                        #     key=lambda x: datetime.strptime(x, "%H:%M")
-                        # )
-
-                        quay_list.append({
-                            'quay':quay_key,
-                            'timestamps':timestamp_list
-                        })
-                    
-                    period['quays'] = quay_list
-
-                    period_lists.append({
-                        'period':period_key
-                    } | period)
-
-                direction_lists.append({
-                    'direction':direction_key,
-                    'periods':period_lists
+                quay_in_entry = entry['quays'].setdefault(departure['quay_code'], {
+                    'quay_name':departure['quay_name'],
+                    'quay_code':departure['quay_code'],
+                    'quay_location':departure['quay_location'],
+                    'known_orders':{}
                 })
-            
-            validity_list.append(
-                validity_details | {'directions':direction_lists}
-            )
+                quay_direction_orders = quay_in_entry['known_orders'].setdefault(
+                    journey['direction'], {}
+                )
+                index_count = quay_direction_orders.setdefault(index, 0)
+                quay_direction_orders[index] += 1
+
+                vehicle_index = entry['vehicles'].setdefault('None', # journey['vehicle_type'] ,
+                len(entry['vehicles']))
+
+                departure_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['pattern_point_id'],)).fetchall()
+                ) | dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['scheduled_point_id'],)).fetchall())
+                entry['notes'] = entry['notes'] | departure_notes
+
+                departure_info = {
+                    'arrival':departure['arrival'],
+                    'departure':departure['departure'],
+                    'order':index,
+                    'journey_number':journey['number'],
+                    'notes':list(journey_notes.keys()) + list(departure_notes.keys()),
+                    'vehicle_type':None, #journey['vehicle_type'],
+                    'route':journey['route'],
+                    'availabilities':applied_availability_keys
+                }
+
+                quay.append(departure_info)
+
+        con.close()
         
-        entry['timetable'] = validity_list
-    
         return entry
 
-                 
     def to_json(self, lines=None):
         if not os.path.exists(f'{output_folder}/json-timetables'):
             os.mkdir(f'{output_folder}/json-timetables')
@@ -622,7 +463,8 @@ class NetexJSON:
             
             line_json = {'line':lines[line]} | self.line_timetable(line)
 
-            open(f'{output_folder}/json-timetables/{filename}.json', 'wb').write(json.dumps(line_json))
+
+            open(f'{output_folder}/json-timetables/{filename}.json', 'wb').write(json.dumps(line_json, option=json.OPT_NON_STR_KEYS))
         
 
         
