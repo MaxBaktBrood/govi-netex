@@ -1,11 +1,8 @@
-import xml.etree.ElementTree as ET
 import geopandas
-import pygml
-import json
+import orjson as json
 import os
 from zipfile import ZipFile
 import gzip
-import requests
 from netex import Netex
 from si_source import getNetexSI
 from nl_source import getNetexNL
