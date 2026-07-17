@@ -28,9 +28,14 @@ data_sources = [
     "SI", "NL", "N", "FIN", "S", "INPUT"
 ]
 
+whitelist = None
+
 if len(sys.argv) > 1:
     data_sources = sys.argv[1].split(",")
     data_sources = list(map(lambda x: x.upper(), data_sources))   
+
+if len(sys.argv) > 2:
+    whitelist = sys.argv[2].split(",")
 
 if 'SI' in data_sources:
     print(f'Verwerken van Sloveense NeTEx')
@@ -40,7 +45,7 @@ if 'SI' in data_sources:
 
 if 'NL' in data_sources:
     print(f'Verwerken van Nederlandse NeTEx')
-    getNetexNL(secrets=secrets_file)
+    getNetexNL(secrets=secrets_file, whitelist=whitelist)
 
 if 'N' in data_sources:
     print(f'Verwerken van Noorse NeTEx')

@@ -5,6 +5,8 @@ This script aims to provide borderless public transport information (GOVI in Dut
 
 Reach out to us by e-mail: [meldpunt@govi.nu](mailto:meldpunt@govi.nu)
 
+This script will be very slow. Processing Netex data in a professional manner should be possible with [Badger](https://github.com/MMTIS/badger/).
+
 ## Supported/tested datasets
 This script supports reading from .zip- and .gz-files, provided in the `./input`-directory. Also, this script has built-in functionality to automatically retrieve Netex-datasets. This script aims to treat enum- and epiap-files as general data for the "real" datasets, as it is supposed to. Here's a table indicating the support for these features per dataset:
 
@@ -33,9 +35,11 @@ GOVI changed it's name to DOVA. DOVA became focussed on domestic developments, w
 ## Usage
 Launch the script like so:
 ```bash
-python3 index.py NETEX_LIST
+python3 index.py NETEX_LIST WHITELIST
 ```
 NETEX_LIST is a by comma seperated list of the methods that will be used to retrieve Netex-data. For example: `SI,NL`. By default, all options will be used, excluding options from Belgium.
+
+WHITELIST is a by comma seperated list of regular expressions. If submitted, at least one of these expressions must match the name of a Netex-file for the file to be processed.
 
 |Method|Meaning|
 |-------|------|
@@ -67,6 +71,3 @@ The layers included, are:
 - Routepoints (not so useful)
 - Routes
 - Stoppoints
-
-## See also
-If you need to work with Netex CEN EPIAP data, please take a look at [Badger](https://github.com/MMTIS/badger/).

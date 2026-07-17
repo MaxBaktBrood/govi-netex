@@ -8,7 +8,7 @@ from io import BytesIO
 import gzip
 import requests
 
-def getNetexSI(secrets_file={}):
+def getNetexSI(secrets_file={}, whitelist=None):
     if 'SI_username' not in secrets_file: return []
     if 'SI_password' not in secrets_file: return []
 
@@ -54,6 +54,8 @@ def getNetexSI(secrets_file={}):
             for index, name in enumerate(netex_zip.namelist()):
                 print(f'ZIP: Bestand {index}/{len(netex_zip.namelist())}: {name}')
                 if os.path.splitext(name)[1] == '.xml':
+                    if whitelist and not any(x in name for x in whitelist):
+                        continue
                     file = netex_zip.open(name, 'r')
                     content = file.read()
                     si_contents.append((link, content.decode('utf-8')))

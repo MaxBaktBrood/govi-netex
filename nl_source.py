@@ -10,7 +10,7 @@ import gzip
 import os
 from epiap import Epiap
 
-def getNetexNL(secrets: dict={}):
+def getNetexNL(secrets: dict={}, whitelist: list=None):
     if 'NL_username' not in secrets or 'NL_password' not in secrets:
         return
     
@@ -44,6 +44,9 @@ def getNetexNL(secrets: dict={}):
                         netex_file = f'{netex_folder}/{f.filename}'
 
                         if stat.S_ISDIR(sftp.stat(netex_file).st_mode):
+                            continue
+
+                        if whitelist and not any(x in f.filename for x in whitelist):
                             continue
 
                         file_topic = ''
@@ -88,7 +91,7 @@ def getNetexNL(secrets: dict={}):
 
                 if split_path[1] == '.gz':
                     gzip_file = gzip.open(io, 'r')
-                    content = gzip_file.read().decode(encoding='utf-8')
+                    content = gzip_file.read()
                     enum_list.append(content)
 
 
@@ -102,7 +105,7 @@ def getNetexNL(secrets: dict={}):
 
                 if split_path[1] == '.gz':
                     gzip_file = gzip.open(io, 'r')
-                    content = gzip_file.read().decode(encoding='utf-8')
+                    content = gzip_file.read()
                     netex = Netex(str_content=content, epiap_list=epiap_list, enum_list=enum_list)
         
 

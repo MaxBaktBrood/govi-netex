@@ -11,7 +11,7 @@ import requests
 from io import BytesIO
 from netex import Netex
 
-def getNetexViaURL(url:str):
+def getNetexViaURL(url:str, whitelist=None):
     netex_request = requests.get(
         url
     )
@@ -23,6 +23,8 @@ def getNetexViaURL(url:str):
     for index, name in enumerate(netex_zip.namelist()):
         print(f'ZIP: Bestand {index}/{len(netex_zip.namelist())}: {name}')
         if os.path.splitext(name)[1] == '.xml':
+            if whitelist and not any(x in name for x in whitelist):
+                continue
             file = netex_zip.open(name, 'r')
             content = file.read()
             netex = Netex(str_content=content)

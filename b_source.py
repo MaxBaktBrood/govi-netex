@@ -8,7 +8,7 @@ from io import BytesIO
 import gzip
 import requests
 
-def getNetexB(secrets_file={}):
+def getNetexB(secrets_file={}, whitelist=None):
     if 'B_api_key' not in secrets_file: return []
 
     b_links = [
@@ -34,6 +34,8 @@ def getNetexB(secrets_file={}):
             for index, name in enumerate(netex_zip.namelist()):
                 print(f'ZIP: Bestand {index}/{len(netex_zip.namelist())}: {name}')
                 if os.path.splitext(name)[1] == '.xml':
+                    if whitelist and not any(x in name for x in whitelist):
+                        continue
                     file = netex_zip.open(name, 'r')
                     content = file.read()
                     print(type(content))
