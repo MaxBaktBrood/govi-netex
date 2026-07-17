@@ -14,6 +14,7 @@ import copy
 import isodate
 import sqlite3
 import random
+from zoneinfo import ZoneInfo
 
 output_folder = './output'
 
@@ -208,7 +209,7 @@ class Netex:
         return route_data
 
 
-    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None, crs='wgs84'):
+    def craftRoutes(self, service:ET.Element, resource:ET.Element | None=None, timetable:ET.Element | None=None, enum_list:list[ET.Element]| None=None):
         routes = service.find('./n:routes', self.ns)
 
         # fallback 1: GERMANY
@@ -314,13 +315,13 @@ class Netex:
 
                 line_gdf = gpd.GeoDataFrame.from_features(
                     features=[line_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
+                ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
 
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
                 points_gdf = gpd.GeoDataFrame.from_features(
                     features=[points_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
+                ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
 
                 points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
 
@@ -421,7 +422,7 @@ class Netex:
 
                 line_gdf = gpd.GeoDataFrame.from_features(
                     features=[line_geodata]
-                ).set_crs(crs).to_crs(self.defaults['crs'])
+                ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
                 line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
             return
@@ -569,13 +570,13 @@ class Netex:
 
             line_gdf = gpd.GeoDataFrame.from_features(
                 features=[line_geodata]
-            ).set_crs(crs).to_crs(self.defaults['crs'])
+            ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
 
             line_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routes", driver="GPKG", mode="a")
 
             points_gdf = gpd.GeoDataFrame.from_features(
                 features=[points_geodata]
-            ).set_crs(crs).to_crs(self.defaults['crs'])
+            ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
 
             points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="routepoints", driver="GPKG", mode="a")
         
@@ -608,8 +609,11 @@ class Netex:
     #                 if lng is not None and lat is not None:
     #                     location = [lng.text, lat.text]
     #     pass
+
+    def date_to_iso(self, text):
+        return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone']).isoformat()
     
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, epiap_list:list[Epiap]|None=None, crs='wgs84', loom=True, time_table = True):
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, resource:ET.Element|None=None, enum_list:list[ET.Element]|None=None, epiap_list:list[Epiap]|None=None, loom=True, time_table = True):
         journeys = timetable.find('./n:vehicleJourneys', self.ns)
         patterns = service.find('./n:journeyPatterns', self.ns)
         time_demand_types = service.find('./n:timeDemandTypes', self.ns)
@@ -691,7 +695,8 @@ class Netex:
                 'network':None,
                 'network_id':None,
                 'network_code':None,
-                'realtime_info': None
+                'realtime_info': None,
+                'vehicle_type':None
             }
 
             journey_timestamps = [
@@ -797,7 +802,8 @@ class Netex:
 
                     time_tracker = None
                     if journey.find('./n:DepartureTime', self.ns) is not None:
-                        time_tracker = datetime.strptime(journey.find('./n:DepartureTime', self.ns).text, "%H:%M:%S")
+                        time_tracker = datetime.strptime(journey.find('./n:DepartureTime', self.ns).text, "%H:%M:%S"
+                        ).replace(tzinfo=self.defaults['timezone'])
 
                     time_in_service = {
                         'from':time_tracker,
@@ -1080,9 +1086,9 @@ class Netex:
                     }
                     if condition is not None:
                         condition_from = condition.find('./n:FromDate', self.ns)
-                        if condition_from is not None: condition_data['from'] = condition_from.text
+                        if condition_from is not None: condition_data['from'] = self.date_to_iso(condition_from.text)
                         condition_through = condition.find('./n:ToDate', self.ns)
-                        if condition_through is not None: condition_data['through'] = condition_through.text
+                        if condition_through is not None: condition_data['through'] = self.date_to_iso(condition_through.text)
                         condition_bits = condition.find('./n:ValidDayBits', self.ns)
                         if condition_bits is not None: condition_data['bits'] = condition_bits.text
 
@@ -1183,8 +1189,8 @@ class Netex:
 
             loom_file_data = {"type": "FeatureCollection",'features':list(reversed(loom_geodata.values()))}
 
-            if crs not in ['wgs84', 'EPSG:4326'] and len(loom_file_data['features']) > 0:
-                loom_file_data = gpd.GeoDataFrame.from_features(loom_file_data).set_crs(crs).to_json(na='drop', to_wgs84=True)
+            if self.defaults['from_crs'] not in ['wgs84', 'EPSG:4326'] and len(loom_file_data['features']) > 0:
+                loom_file_data = gpd.GeoDataFrame.from_features(loom_file_data).set_crs(self.defaults['from_crs']).to_json(na='drop', to_wgs84=True)
             else:
                 loom_file_data = json.dumps(loom_file_data).decode()
 
@@ -1200,7 +1206,7 @@ class Netex:
 
         stop_points_gdf = gpd.GeoDataFrame.from_features(
             features=stop_points_geodata
-        ).set_crs(crs).to_crs(self.defaults['crs'])
+        ).set_crs(self.defaults['from_crs']).to_crs(self.defaults['to_crs'])
 
         stop_points_gdf.to_file(f'{output_folder}/netex.gpkg', layer="scheduled_stop_points", driver="GPKG", mode="a")
 
@@ -1257,7 +1263,9 @@ class Netex:
     defaults = {
         'datasource':None,
         'datasource_code':None,
-        'crs':4326, # 4326 = wgs84
+        'from_crs':4326,
+        'to_crs':4326, # 4326 = wgs84,
+        'timezone':ZoneInfo('UTC')
     }
 
     loom_line_colors = {}
@@ -1318,20 +1326,23 @@ class Netex:
                         if short_name_el is not None:
                             self.defaults['datasource_code'] = short_name_el.text
 
-            df_crs = 'wgs84'
             found_crs = compositeFrame.find('./n:FrameDefaults/n:DefaultLocationSystem', self.ns)
             if found_crs is not None:
-                df_crs = found_crs.text
+                self.defaults['from_crs'] = found_crs.text
+
+            found_timezone = compositeFrame.find('./n:FrameDefaults/n:DefaultLocale/n:TimeZone', self.ns)
+            if found_timezone is not None:
+                self.defaults['timezone'] = ZoneInfo(found_timezone.text)
 
             if service is None: continue
 
             print('Processing routes')
-            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list, crs=df_crs)
+            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list)
 
             if timetable is None: continue
 
             print('Processing journeys')
-            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list, crs=df_crs)
+            self.journeys = self.craftJourneys(service=service, resource=resource, timetable=timetable, enum_list=enum_list, epiap_list=epiap_list)
 
             self.getNotices(service=service)
 
