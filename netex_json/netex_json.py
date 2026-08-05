@@ -371,13 +371,14 @@ class NetexJSON:
             "notes":{},
             "availabilities":availabilities,
             "vehicles":{},
-            "timetable":{}
+            "timetable":{},
+            "journeys":{}
             
         }
 
         journeys = list(sorted(map(
             lambda x: dict(zip((
-                "id","number","route","line_id","in_scope_of_operator","distance","dru","direction","line_name","line_number","network","network_id","network_code","realtime_info",
+                "id","number","route","pattern","line_id","in_scope_of_operator","distance","dru","direction","line_name","line_number","network","network_id","network_code","realtime_info","vehicle_type","starting_time"
             ), x))
             , cur.execute("SELECT * FROM journeys WHERE line_id = ?", (line_id,)).fetchall()
         ), key=lambda x: 0 if x['number'] is None else int(x['number'])))
@@ -388,7 +389,7 @@ class NetexJSON:
                 cur.execute("SELECT availability FROM availabilities_per_journey WHERE journey = ?", (journey['id'],)).fetchall()
             ))
         
-            departures = cur.execute("SELECT pattern_point_id, scheduled_point_id, quay_name, quay_code, quay_location, arrival, departure FROM journey_timestamps WHERE journey = ?", (journey['id'],)).fetchall()
+            departures = cur.execute("SELECT pattern_point_id, scheduled_point_id, quay_name, quay_code, quay_location, arrival, departure FROM pattern_timestamps WHERE pattern = ?", (journey['pattern'],)).fetchall()
             departures = list(map(
                 lambda x: {
                     'pattern_point_id':x[0],
@@ -423,8 +424,7 @@ class NetexJSON:
                 index_count = quay_direction_orders.setdefault(index, 0)
                 quay_direction_orders[index] += 1
 
-                vehicle_index = entry['vehicles'].setdefault('None', # journey['vehicle_type'] ,
-                len(entry['vehicles']))
+                
 
                 departure_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['pattern_point_id'],)).fetchall()
                 ) | dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['scheduled_point_id'],)).fetchall())
@@ -442,6 +442,15 @@ class NetexJSON:
                 }
 
                 quay.append(departure_info)
+
+            vehicle_index = entry['vehicles'].setdefault('None', # journey['vehicle_type'] ,
+                len(entry['vehicles']))
+
+            entry['journeys'][journey['id']] = {
+                'number':journey['number'],
+                'route':journey['route'],
+                'vehicle':vehicle_index
+            }
 
         con.close()
         

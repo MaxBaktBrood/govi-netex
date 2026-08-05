@@ -10,9 +10,14 @@ from url_source import getNetexViaURL
 from b_source import getNetexB
 from plot import plot_layer
 import sys
+import shutil
 
 input_folder = './input'
 output_folder = './output'
+
+if os.path.exists(output_folder):
+    print('Verwijderen output folder...')
+    shutil.rmtree(output_folder)
 
 if not os.path.isdir(input_folder):
     print('Map gemaakt om bestanden in te zetten: input')
@@ -89,8 +94,8 @@ if 'INPUT' in data_sources:
             content = file.read()
             netex = Netex(str_content=content)
 
-print('Afbeelding maken...')
-plot_layer(geopandas.read_file(f'{output_folder}/netex.gpkg', layer='routes'), output_folder=output_folder)
+# print('Afbeelding maken...')
+# plot_layer(geopandas.read_file(f'{output_folder}/netex.gpkg', layer='routes'), output_folder=output_folder)
 
 
 # netex = Netex(file="NeTEx_ARR_NL_20260321_20260322_1405.xml")
