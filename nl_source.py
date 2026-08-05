@@ -46,7 +46,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                         if stat.S_ISDIR(sftp.stat(netex_file).st_mode):
                             continue
 
-                        if whitelist and not any(x in f.filename for x in whitelist):
+                        if netex_type == 'data' and whitelist and not any(x in f.filename for x in whitelist):
                             continue
 
                         file_topic = ''
