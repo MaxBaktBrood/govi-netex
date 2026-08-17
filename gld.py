@@ -85,7 +85,7 @@ linecode_categories = {}
 
 if os.path.exists(f'{non_netex_folder}/abc-lijnen.xlsx'):
     print(f'{printTime()} Inladen ABC-categorieën')
-    linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').replace(float('nan'), None).set_index('code')["ABC-Category"].to_dict()
+    linecode_categories = pd.read_excel(f'{non_netex_folder}/abc-lijnen.xlsx', sheet_name='data').replace(float('nan'), None).astype({"code":"str"}).set_index('code')["ABC-Category"].to_dict()
 
 for file in os.listdir(data_folder):
     split_path = os.path.splitext(file)
