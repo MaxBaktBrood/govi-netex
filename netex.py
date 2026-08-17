@@ -597,16 +597,15 @@ class Netex:
             stop_point_location = stop_point.find("./n:Location", self.ns)
             if stop_point_location is not None:
                 gml = stop_point_location.find("./gml:pos", self.ns)
-                location = None
 
                 if gml is not None:
-                    location = list(pygml.basics.parse_pos(gml.text))
+                    stop_point_data['location'] = " ".join(str(x) for x in list(pygml.basics.parse_pos(gml.text)))
                 else:
                     lng = stop_point_location.find('./n:Longitude', self.ns)
                     lat = stop_point_location.find('./n:Latitude', self.ns)
 
                     if lng is not None and lat is not None:
-                        stop_point_data['location'] = [lng.text, lat.text]
+                        stop_point_data['location'] = " ".join([lng.text, lat.text])
             
             scheduled_stop_points[stop_point_data['id']] = stop_point_data
                                         
