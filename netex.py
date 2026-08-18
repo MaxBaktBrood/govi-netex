@@ -15,6 +15,7 @@ import isodate
 import sqlite3
 import random
 from zoneinfo import ZoneInfo
+from pyproj import Transformer
 
 output_folder = './output'
 
@@ -384,6 +385,12 @@ class Netex:
                 if lng is not None and lat is not None:
                     routepoint_data['location'] = " ".join([lng.text, lat.text])
 
+            if routepoint_data['location'] is not None and self.transformer is not None:
+                routepoint_data['location'] = ' '.join(
+                    map(str, self.transformer.transform(*routepoint_data['location'].split(' ')))
+                )
+
+
             routepoints[routepoint_data['id']] = routepoint_data
 
             
@@ -395,7 +402,13 @@ class Netex:
             }
 
             routelink = pygml.parse(ET.tostring(link.find(f"./gml:LineString", self.ns)))
-            link_data['location'] = json.dumps(dict(routelink.__geo_interface__)['coordinates']).decode()
+            coords = dict(routelink.__geo_interface__)['coordinates']
+
+            if routelink is not None and self.transformer is not None:
+                routelink = (self.transformer.transform(*x) for x in coords)
+
+
+            link_data['location'] = " ".join(" ".join(map(str, x)) for x in coords)
 
             routelinks[link_data['id']] = link_data
         
@@ -570,7 +583,13 @@ class Netex:
 
                     if lng is not None and lat is not None:
                         stop_point_data['location'] = " ".join([lng.text, lat.text])
-            
+
+            if stop_point_data['location'] is not None and self.transformer is not None:
+                
+                stop_point_data['location'] = ' '.join(
+                    map(str, self.transformer.transform(*stop_point_data['location'].split(' ')))
+                )
+
             scheduled_stop_points[stop_point_data['id']] = stop_point_data
                                         
 
@@ -830,6 +849,8 @@ class Netex:
 
         self.options = options
 
+        self.transformer = None
+
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
         for compositeFrame in compositeFrames:
@@ -862,6 +883,9 @@ class Netex:
             found_crs = compositeFrame.find('./n:FrameDefaults/n:DefaultLocationSystem', self.ns)
             if found_crs is not None:
                 self.defaults['from_crs'] = found_crs.text
+
+            if self.defaults['from_crs'] != self.defaults['to_crs']:
+                self.transformer = Transformer.from_crs(self.defaults['from_crs'], self.defaults['to_crs'])
 
             found_timezone = compositeFrame.find('./n:FrameDefaults/n:DefaultLocale/n:TimeZone', self.ns)
             if found_timezone is not None:
