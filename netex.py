@@ -25,6 +25,7 @@ class Netex:
     def to_db(self, name, data={}):
             if len(data) == 0: return print(f'{name} heeft geen data')
 
+            if not self.con: self.con = sqlite3.connect(f'{output_folder}/netex.db')
             if not self.cur: self.cur = self.con.cursor()
 
             def sql_part(x):
@@ -126,49 +127,11 @@ class Netex:
                 if code_el is not None: operator['code'] = code_el.text
                 operators[operator['id']] = operator
         
+        if enum_list:
+            self.enum(enum_list)
+
         authorities = {}
         areas = {}
-        types_of_service = {}
-        if enum_list:
-            for enum in enum_list:
-                compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-                for compositeFrame in compositeFrames:                    
-                    for authority_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:Authority", self.ns):
-                        authority_data = {
-                            'id':authority_el.attrib['id'],
-                            'name':None,
-                            'code':None
-                        }
-                        name = authority_el.find('./n:Name', self.ns)
-                        if name is not None:
-                            authority_data['name'] = name.text
-                        code = authority_el.find('./n:ShortName', self.ns)
-                        if code is not None:
-                            authority_data['code'] = code.text
-                        authorities[authority_data['id']] = authority_data
-
-                    for area_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone", self.ns):
-                        area_data = {
-                            'id':area_el.attrib['id'], 'name':None, 'code':None
-                        }
-                        name = area_el.find('./n:Name', self.ns)
-                        if name is not None:
-                            area_data['name'] = name.text
-                        code = area_el.find('./n:ShortName', self.ns)
-                        if code is not None:
-                            area_data['code'] = code.text
-
-                        areas[area_data['id']] = area_data
-
-                    for type_of_service_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService", self.ns):
-                        type_data = {
-                            'id':type_of_service_el.attrib['id'], 'name':None
-                        }
-                        
-                        name = type_of_service_el.find('./n:Name', self.ns)
-                        if name is not None:
-                            type_data['name'] = name.text
-                            types_of_service[type_data['id']] = type_data
 
         if resource is not None:
             for authority_el in resource.findall(f'./n:organisations/n:Authority', self.ns):
@@ -435,8 +398,6 @@ class Netex:
             link_data['location'] = json.dumps(dict(routelink.__geo_interface__)['coordinates']).decode()
 
             routelinks[link_data['id']] = link_data
-
-        self.con = sqlite3.connect(f'{output_folder}/netex.db')
         
         
 
@@ -451,7 +412,6 @@ class Netex:
         self.to_db('operators', operators)
         self.to_db('authorities', authorities)
         self.to_db('areas', areas)
-        self.to_db('types_of_service', types_of_service)
         self.to_db('lines', lines)
         self.to_db('routes', routes)
         self.to_db('routepoints', routepoints)
@@ -581,14 +541,18 @@ class Netex:
             if 'id' not in stop_point.attrib: continue
             stop_point_data = {
                 'id':stop_point.attrib['id'],
+                'route_point':None,
                 'name':None,
                 'stop_area':None,
-                'location':None,
+                'location':None
             }
 
             stop_area_ref_el = stop_point.find("./n:stopAreas/n:StopAreaRef", self.ns)
             if stop_area_ref_el is not None:
                 stop_point_data['stop_area'] = stop_area_ref_el.attrib['ref']
+
+            route_point_ref_el = stop_point.find("./n:projections/n:PointProjection/n:ProjectToPointRef", self.ns)
+            stop_point_data['route_point'] = route_point_ref_el.attrib['ref']
 
             stop_point_name = stop_point.find("./n:Name", self.ns)
             if stop_point_name is not None:
@@ -780,6 +744,56 @@ class Netex:
             }
             
         self.to_db('notices', processed_notices)     
+
+    def enum(self, enum_list:list[ET.Element]=[]):
+        
+        authorities = {}
+        areas = {}
+        types_of_service = {}
+
+        for enum in enum_list:
+            compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
+            for compositeFrame in compositeFrames:                    
+                for authority_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:Authority", self.ns):
+                    authority_data = {
+                        'id':authority_el.attrib['id'],
+                        'name':None,
+                        'code':None
+                    }
+                    name = authority_el.find('./n:Name', self.ns)
+                    if name is not None:
+                        authority_data['name'] = name.text
+                    code = authority_el.find('./n:ShortName', self.ns)
+                    if code is not None:
+                        authority_data['code'] = code.text
+                    authorities[authority_data['id']] = authority_data
+
+                for area_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone", self.ns):
+                    area_data = {
+                        'id':area_el.attrib['id'], 'name':None, 'code':None
+                    }
+                    name = area_el.find('./n:Name', self.ns)
+                    if name is not None:
+                        area_data['name'] = name.text
+                    code = area_el.find('./n:ShortName', self.ns)
+                    if code is not None:
+                        area_data['code'] = code.text
+
+                    areas[area_data['id']] = area_data
+
+                for type_of_service_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService", self.ns):
+                    type_data = {
+                        'id':type_of_service_el.attrib['id'], 'name':None
+                    }
+                    
+                    name = type_of_service_el.find('./n:Name', self.ns)
+                    if name is not None:
+                        type_data['name'] = name.text
+                        types_of_service[type_data['id']] = type_data
+
+        self.to_db('authorities', authorities)
+        self.to_db('areas', areas)
+        self.to_db('types_of_service', types_of_service)
     
     defaults = {
         'datasource':None,
@@ -853,7 +867,10 @@ class Netex:
             if found_timezone is not None:
                 self.defaults['timezone'] = ZoneInfo(found_timezone.text)
 
-            if service is None: continue
+            if service is None: 
+                if general is not None:
+                    self.enum([self.root])
+                continue
 
             self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list)
 
