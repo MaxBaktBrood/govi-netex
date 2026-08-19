@@ -24,7 +24,7 @@ class Netex:
     con = None
     cur = None
     def to_db(self, name, data={}):
-            if len(data) == 0: return print(f'{name} heeft geen data')
+            if len(data) == 0: return #print(f'{name} heeft geen data')
 
             if not self.con: self.con = sqlite3.connect(f'{output_folder}/netex.db')
             if not self.cur: self.cur = self.con.cursor()
@@ -80,7 +80,7 @@ class Netex:
         return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone']).isoformat()
     
 
-    def craftRoutes(self, service:ET.Element, resource:typing.Optional[ET.Element]=None, timetable:typing.Optional[ET.Element]=None, general_frame=None, enum_list:typing.Optional[list[ET.Element]]=None):
+    def craftRoutes(self, service:ET.Element, resource:typing.Optional[ET.Element]=None, timetable:typing.Optional[ET.Element]=None, general_frame=None, site=None, enum_list:typing.Optional[list[ET.Element]]=None):
         rel_point_route = []
 
         brandings = {}
@@ -405,15 +405,16 @@ class Netex:
             coords = dict(routelink.__geo_interface__)['coordinates']
 
             if routelink is not None and self.transformer is not None:
-                routelink = (self.transformer.transform(*x) for x in coords)
+                coords = (self.transformer.transform(*x) for x in coords)
 
 
             link_data['location'] = " ".join(" ".join(map(str, x)) for x in coords)
 
             routelinks[link_data['id']] = link_data
-        
-        
 
+        if site is not None:
+            self.site_enum(site)   
+        
         self.to_db('rel_point_route', dict(
             (str(i), x) for i, x in enumerate(rel_point_route)
         ))
@@ -694,7 +695,6 @@ class Netex:
         rel_stoppoint_quaycode = []
         for stop in service.findall(f'./n:stopAssignments/n:PassengerStopAssignment', self.ns):
             stop_data = {
-                'id':stop.attrib['id'],
                 'stoppoint':None,
                 'quay':None
             }
@@ -765,50 +765,99 @@ class Netex:
         self.to_db('notices', processed_notices)     
 
     def enum(self, enum_list:list[ET.Element]=[]):
-        
+        frames = []
+        for enum in enum_list:
+            frames.extend(enum.findall('./n:dataObjects/n:CompositeFrame', self.ns))
+        self.enum_frames(frames)
+
+    def site_enum(self, site:ET.Element):
+        rel_quay_stopplace = []
+        stopplaces = {}
+    
+        for stopplace_el in site.findall(f"./n:stopPlaces/n:StopPlace", self.ns):
+            code_el = stopplace_el.find('./n:privateCodes/n:PrivateCode[@type="StopPlaceCode"]', self.ns)
+            if code_el is None: continue
+            
+            for quay_el in stopplace_el.findall(f"./n:quays/n:Quay", self.ns):
+                quaycode_el = quay_el.find('./n:privateCodes/n:PrivateCode[@type="QuayCode"]', self.ns)
+                if quaycode_el is None: continue
+
+                rel_quay_stopplace.append({
+                    'stopplace':code_el.text,
+                    'quay':quaycode_el.text
+                })
+
+            stopplace_data = {
+                'id':code_el.text,
+                'name':None,
+                'location':None
+            }
+
+            location_el = stopplace_el.find('./n:Centroid/n:Location/gml:pos', self.ns)
+            if location_el is not None:
+                stopplace_data['location'] = location_el.text
+
+            if stopplace_data['location'] is not None and self.transformer is not None:
+                stopplace_data['location'] = ' '.join(
+                    map(str, self.transformer.transform(*stopplace_data['location'].split(' ')))
+                )
+
+            name_el = stopplace_el.find('./n:Name', self.ns)
+            if name_el is not None: stopplace_data['name'] = name_el.text
+
+            stopplaces[stopplace_data['id']] = stopplace_data
+
+        self.to_db('rel_quay_stopplace', dict(
+            (str(i), x) for i, x in enumerate(rel_quay_stopplace)
+        ))
+        self.to_db('stopplaces', stopplaces)
+
+
+    def enum_frames(self, compositeFrames:list[ET.Element]=[]):
         authorities = {}
         areas = {}
         types_of_service = {}
 
-        for enum in enum_list:
-            compositeFrames = enum.findall('./n:dataObjects/n:CompositeFrame', self.ns)
-            for compositeFrame in compositeFrames:                    
-                for authority_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:Authority", self.ns):
-                    authority_data = {
-                        'id':authority_el.attrib['id'],
-                        'name':None,
-                        'code':None
-                    }
-                    name = authority_el.find('./n:Name', self.ns)
-                    if name is not None:
-                        authority_data['name'] = name.text
-                    code = authority_el.find('./n:ShortName', self.ns)
-                    if code is not None:
-                        authority_data['code'] = code.text
-                    authorities[authority_data['id']] = authority_data
+        for compositeFrame in compositeFrames:                    
+            for authority_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:Authority", self.ns):
+                authority_data = {
+                    'id':authority_el.attrib['id'],
+                    'name':None,
+                    'code':None
+                }
+                name = authority_el.find('./n:Name', self.ns)
+                if name is not None:
+                    authority_data['name'] = name.text
+                code = authority_el.find('./n:ShortName', self.ns)
+                if code is not None:
+                    authority_data['code'] = code.text
+                authorities[authority_data['id']] = authority_data
 
-                for area_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone", self.ns):
-                    area_data = {
-                        'id':area_el.attrib['id'], 'name':None, 'code':None
-                    }
-                    name = area_el.find('./n:Name', self.ns)
-                    if name is not None:
-                        area_data['name'] = name.text
-                    code = area_el.find('./n:ShortName', self.ns)
-                    if code is not None:
-                        area_data['code'] = code.text
+            for area_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:TransportAdministrativeZone", self.ns):
+                area_data = {
+                    'id':area_el.attrib['id'], 'name':None, 'code':None
+                }
+                name = area_el.find('./n:Name', self.ns)
+                if name is not None:
+                    area_data['name'] = name.text
+                code = area_el.find('./n:ShortName', self.ns)
+                if code is not None:
+                    area_data['code'] = code.text
 
-                    areas[area_data['id']] = area_data
+                areas[area_data['id']] = area_data
 
-                for type_of_service_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService", self.ns):
-                    type_data = {
-                        'id':type_of_service_el.attrib['id'], 'name':None
-                    }
-                    
-                    name = type_of_service_el.find('./n:Name', self.ns)
-                    if name is not None:
-                        type_data['name'] = name.text
-                        types_of_service[type_data['id']] = type_data
+            for type_of_service_el in compositeFrame.findall(f"./n:frames/n:GeneralFrame/n:members/n:ValueSet/n:values/n:TypeOfService", self.ns):
+                type_data = {
+                    'id':type_of_service_el.attrib['id'], 'name':None
+                }
+                
+                name = type_of_service_el.find('./n:Name', self.ns)
+                if name is not None:
+                    type_data['name'] = name.text
+                    types_of_service[type_data['id']] = type_data
+
+            if compositeFrame.find(f"./n:frames/n:SiteFrame", self.ns) is not None:
+                self.site_enum(compositeFrame.find(f"./n:frames/n:SiteFrame", self.ns))
 
         self.to_db('authorities', authorities)
         self.to_db('areas', areas)
@@ -853,6 +902,8 @@ class Netex:
 
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
+        enum_frames = []
+
         for compositeFrame in compositeFrames:
             general = compositeFrame.find('./n:frames/n:GeneralFrame', self.ns)
             resource = compositeFrame.find('./n:frames/n:ResourceFrame', self.ns)
@@ -860,6 +911,7 @@ class Netex:
             timetable = compositeFrame.find('./n:frames/n:TimetableFrame', self.ns)
             serviceCalendar = compositeFrame.find('./n:frames/n:ServiceCalendarFrame', self.ns)
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
+            site = compositeFrame.find('./n:frames/n:SiteFrame', self.ns)
 
             defualts = compositeFrame.find('./n:FrameDefaults', self.ns)
             if defualts is not None:
@@ -892,11 +944,11 @@ class Netex:
                 self.defaults['timezone'] = ZoneInfo(found_timezone.text)
 
             if service is None: 
-                if general is not None:
-                    self.enum([self.root])
+                if general is not None or resource is not None or site is not None:
+                    enum_frames.append(compositeFrame)
                 continue
 
-            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, enum_list=enum_list)
+            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, site=site, enum_list=enum_list)
 
             if timetable is None: continue
 
@@ -906,6 +958,8 @@ class Netex:
 
             self.db_indexes()
 
-            if self.cur: self.cur.close()
-            if self.con: self.con.close()
+        if len(enum_frames) > 0: self.enum_frames(enum_frames)
+
+        if self.cur: self.cur.close()
+        if self.con: self.con.close()
             
