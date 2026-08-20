@@ -73,7 +73,7 @@ class Netex:
         self.cur.execute('CREATE INDEX IF NOT EXISTS idx_availabilities_per_journey ON availabilities_per_journey(journey);')
         self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_point_route ON rel_point_route(route);')
         self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_responsibility_area ON rel_responsibility_area(responsibility);')
-        self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_stoppoint_quaycode ON rel_stoppoint_quaycode(stoppoint);')
+        # self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_stoppoint_quaycode ON rel_stoppoint_quaycode(stoppoint);')
         self.con.commit()
 
     def date_to_iso(self, text):
@@ -692,15 +692,15 @@ class Netex:
 
             journeys[journey_data['id']] = journey_data
 
-        rel_stoppoint_quaycode = []
+        rel_stoppoint_quaycode = {}
         for stop in service.findall(f'./n:stopAssignments/n:PassengerStopAssignment', self.ns):
             stop_data = {
-                'stoppoint':None,
+                'id':None,
                 'quay':None
             }
             stoppoint_el = stop.find(f'./n:ScheduledStopPointRef', self.ns)
             if stoppoint_el is not None and 'ref' in stoppoint_el.attrib:  
-                stop_data['stoppoint' ]= stoppoint_el.attrib['ref']
+                stop_data['id' ]= stoppoint_el.attrib['ref']
 
             quay_el = stop.find(f'./n:QuayRef', self.ns)
             if quay_el is not None and 'ref' in quay_el.attrib: stop_data['quay'] = quay_el.attrib['ref'].replace(
@@ -709,7 +709,7 @@ class Netex:
                 'NL:CHB:Quay:','NL:Q:'
             )
 
-            rel_stoppoint_quaycode.append(stop_data)
+            rel_stoppoint_quaycode[stop_data['id']] = stop_data
 
         self.to_db('runtimes', runtimes)
         self.to_db('waittimes', waittimes)
@@ -720,9 +720,7 @@ class Netex:
         self.to_db('stop_areas', stop_areas)
         self.to_db('validity_conditions', validity_conditions)
         self.to_db('journeys', journeys)
-        self.to_db('rel_stoppoint_quaycode', dict(
-            (str(i), x) for i, x in enumerate(rel_stoppoint_quaycode)
-        ))
+        self.to_db('rel_stoppoint_quaycode', rel_stoppoint_quaycode)
         self.to_db('availabilities_per_journey', dict(
             (str(i), x) for i, x in enumerate(availabilities_per_journey)
         ))
