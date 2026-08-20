@@ -17,7 +17,7 @@ def frequencies(range):
     cur = con.cursor()
     
     lines_query = cur.execute("""
-SELECT id FROM lines WHERE code = "A036"
+SELECT id FROM lines
         """)
     
     lines = lines_query.fetchall()
@@ -46,9 +46,6 @@ SELECT id FROM lines WHERE code = "A036"
 
                     if departure['departure'] is None: continue
 
-                    print(f'{line_id} {direction_key} {quay_key} {departure['journey']}')
-                    # print(departure)
-
                     for availability_key in departure['availabilities']:
                         availability = line_data['availabilities'][availability_key]
 
@@ -63,9 +60,6 @@ SELECT id FROM lines WHERE code = "A036"
 
                             date_tracker = date_tracker + timedelta(days=1)
 
-                # open('./output/frequencies.json', 'wb').write(json.dumps(departures_per_day))
-                # raise Exception('hoi')
-
                 for date in departures_per_day:
                     date_range_from = datetime.fromisoformat(date) + range_from
                     date_range_to = datetime.fromisoformat(date) + range_to
@@ -74,11 +68,10 @@ SELECT id FROM lines WHERE code = "A036"
                         return x >= date_range_from and x < date_range_to
 
                     timestamps = departures_per_day[date]
-                    # print(f'\n{list(map(lambda x: x.isoformat(), filter(range_filter, timestamps)))}')
+
                     in_range = len(list(filter(range_filter, timestamps)))
 
-                    frequency = in_range #/ ((range_to - range_from).total_seconds() / 3600)
-                    # print(" ".join(list(map(str,[line_id, in_range, (range_to - range_from).total_seconds()]))))
+                    frequency = in_range ((range_to - range_from).total_seconds() / 3600)
 
                     result_line = result.setdefault(line_id, {})
                     result_direction = result_line.setdefault(direction_key, {})
