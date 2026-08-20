@@ -913,6 +913,15 @@ class Netex:
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
             site = compositeFrame.find('./n:frames/n:SiteFrame', self.ns)
 
+            frametype_el = compositeFrame.find('./n:TypeOfFrameRef')
+            if frametype_el is None:
+                print('No frametype! Continuing...')
+                continue
+            frametype = {
+                'general':frametype_el.attrib['ref'].split(':')[0],
+                'specific':frametype_el.attrib['ref']
+            }
+
             defualts = compositeFrame.find('./n:FrameDefaults', self.ns)
             if defualts is not None:
                 def_datasource_el = defualts.find('./n:DefaultDataSourceRef', self.ns)
