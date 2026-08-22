@@ -275,7 +275,9 @@ class Netex:
             if line_name_el is not None:
                 line_data['name'] = line_name_el.text
             
-            line_code_el = line.find('.//n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
+            line_code_el = line.find('./n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
+            if line_code_el is None:
+                line_code_el = line.find('./n:PrivateCode', self.ns)
             if line_code_el is not None:
                 line_data['code'] = line_code_el.text
 
@@ -956,7 +958,7 @@ class Netex:
                     enum_frames.append(compositeFrame)
                 continue
 
-            self.rotues = self.craftRoutes(service=service, resource=resource, timetable=timetable, site=site, enum_list=enum_list)
+            self.routes = self.craftRoutes(service=service, resource=resource, timetable=timetable, site=site, enum_list=enum_list)
 
             if timetable is None: continue
 
@@ -971,3 +973,4 @@ class Netex:
         if self.cur: self.cur.close()
         if self.con: self.con.close()
             
+
