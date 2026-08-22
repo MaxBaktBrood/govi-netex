@@ -21,7 +21,6 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
 
     latest_data_files = {}
     latest_enum_files = {}
-    latest_epiap_files = {}
 
     with paramiko.SSHClient() as client:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -35,7 +34,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                     netex_type = 'data'
                     if name == 'test': continue
                     if name == 'enum': netex_type = 'enum'
-                    if name == 'epiap': netex_type = 'epiap'
+                    if name == 'epiap': netex_type = 'enum'
 
                     netex_files = sftp.listdir_attr(netex_folder)
                     netex_files.sort(key = lambda f: f.st_mtime, reverse=True)
@@ -59,25 +58,6 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                             latest_data_files.setdefault(file_topic, netex_file)
                         if netex_type == 'enum':
                             latest_enum_files.setdefault(file_topic, netex_file)
-                        if netex_type == 'epiap':
-                            latest_epiap_files.setdefault(file_topic, netex_file)
-
-            epiap_list = []
-
-            for file in latest_epiap_files.values():
-                print(f'Verwerken van {file}')
-                io = BytesIO()
-                sftp.getfo(file, io)
-                io.seek(0)
-
-                split_path = os.path.splitext(file)
-
-                if split_path[1] == '.gz':
-                    gzip_file = gzip.open(io, 'r')
-                    content = gzip_file.read().decode(encoding='utf-8')
-                    epiap_list.append(content)
-
-            epiap_list = list(map(lambda x: Epiap(str_content=x), epiap_list))
 
             enum_list = []
 
@@ -106,7 +86,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                 if split_path[1] == '.gz':
                     gzip_file = gzip.open(io, 'r')
                     content = gzip_file.read()
-                    netex = Netex(str_content=content, epiap_list=epiap_list, enum_list=enum_list)
+                    netex = Netex(str_content=content, enum_list=enum_list)
         
 
 
