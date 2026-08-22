@@ -867,7 +867,8 @@ class Netex:
         'responsibility_set':None,
         'from_crs':4326,
         'to_crs':4326, # 4326 = wgs84,
-        'timezone':ZoneInfo('UTC')
+        'timezone':ZoneInfo('UTC'),
+        'frametype':{'general':'NL', 'specific':None}
     }
 
     def __init__(self, file = None, str_content = None, enum_list=None, epiap_list=None, options={}):
@@ -911,14 +912,14 @@ class Netex:
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
             site = compositeFrame.find('./n:frames/n:SiteFrame', self.ns)
 
-            frametype_el = compositeFrame.find('./n:TypeOfFrameRef')
+            frametype_el = compositeFrame.find('./n:TypeOfFrameRef', self.ns)
             if frametype_el is None:
-                print('No frametype! Continuing...')
-                continue
-            frametype = {
-                'general':frametype_el.attrib['ref'].split(':')[0],
-                'specific':frametype_el.attrib['ref']
-            }
+                print('No frametype!')
+            else:
+                self.defaults['frametype'] = {
+                    'general':frametype_el.attrib['ref'].split(':')[0],
+                    'specific':frametype_el.attrib['ref']
+                }
 
             defualts = compositeFrame.find('./n:FrameDefaults', self.ns)
             if defualts is not None:
