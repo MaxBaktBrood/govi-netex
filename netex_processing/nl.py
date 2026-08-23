@@ -5,38 +5,45 @@ from datetime import datetime
 import isodate
 import sqlite3
 from dataclasses import dataclass, fields, astuple, asdict
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Notice
 
 class NetexNL:
 
-    def to_db(self, name, data={}):
+    def to_db(self, name, dataclass, data={}):
+            
+            cols = []            
+            for field in fields(dataclass):
+                sql_part = f'{field.name}'
 
-            for key in data:
-                data[key] = asdict(data[key])
+                if field.type == str:
+                    sql_part += ' TEXT NOT NULL'
+                elif field.type == int:
+                    sql_part += ' INTEGER NOT NULL'
+                elif field.type == float:
+                    sql_part += ' REAL NOT NULL'
+                elif field.type == Optional[str]:
+                    sql_part += ' TEXT'
+                elif field.type == Optional[int]:
+                    sql_part += ' INTEGER'
+                elif field.type == Optional[float]:
+                    sql_part += ' REAL'
+                
+                if field.name == 'id': sql_part += ' PRIMARY KEY'
 
-            if len(data) == 0: return #print(f'{name} heeft geen data')
-
+                cols.append(sql_part)
+            
             if not self.con: self.con = sqlite3.connect(f'{self.defaults['output_folder']}/netex.db')
             if not self.cur: self.cur = self.con.cursor()
 
-            def sql_part(x):
-                values = map(lambda y: y[x], list(data.values()))
-                t = 'TEXT'
-                if not any(isinstance(x, str) for x in values):
-                    if all(x == None or isinstance(x, int) for x in values): t = 'INTEGER'
-                    elif all(x == None or isinstance(x, (float, int)) for x in values): t = 'REAL'
-                if x == 'id': return f'{x} {t} PRIMARY KEY'
-                return f'{x} {t}'
-
-            cols = list(map(
-                sql_part,
-                list(list(data.values())[0].keys())
-            ))
-
             self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
+
+            if len(data) == 0: 
+                self.con.commit()
+                return #print(f'{name} heeft geen data')
 
             self.cur.executemany(f'INSERT OR REPLACE INTO {name} VALUES ({", ".join(['?'] * len(list(cols)))})',
                 list(map(
-                    lambda x: tuple(x.values()),
+                    lambda x: astuple(x),
                     list(data.values())
                 ))
             )
@@ -68,147 +75,104 @@ class NetexNL:
     def date_to_iso(self, text):
         return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone']).isoformat()
     
+    def get_brandings(self, resource:ET.Element):
+        brandings: dict[str, Branding] = {}
 
-    def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None, enum_list:Optional[list[ET.Element]]=None):
-
-        brandings = {}
-        @dataclass
-        class Branding:
-            id: str
-            name: Optional[str] = None
-            url: Optional[str] = None
         
-        if resource is not None:
-            for branding_el in resource.findall(f"./n:typesOfValue/n:Branding", self.ns):
-                branding = Branding(branding_el.attrib['id'])
-                name = branding_el.find('./n:Name', self.ns)
-                if name is not None:
-                    branding.name = name.text
-                
-                url = branding_el.find('./n:Url', self.ns)
-                if url is not None:
-                    branding.url = url.text
-                
-                brandings[branding.id] = branding
+        for branding_el in resource.findall(f"./n:typesOfValue/n:Branding", self.ns):
+            branding = Branding(branding_el.attrib['id'])
+            name = branding_el.find('./n:Name', self.ns)
+            if name is not None:
+                branding.name = name.text
+            
+            url = branding_el.find('./n:Url', self.ns)
+            if url is not None:
+                branding.url = url.text
+            
+            brandings[branding.id] = branding
 
-        product_types = {}
-        @dataclass
-        class ProductType:
-            id: str
-            name: Optional[str] = None
-
-        if resource is not None:
-            for product_el in resource.findall(f"./n:typesOfValue/n:TypeOfProductCategory", self.ns):
-                product = ProductType(product_el.attrib['id'], None)
-                name = product_el.find('./n:Name', self.ns)
-                if name is not None:
-                    product.name = name.text
-                
-                product_types[product.id] = product
-
-        operators = {}
-        @dataclass
-        class Operator:
-            id: str
-            name: Optional[str] = None
-            code: Optional[str] = None
-
-        if resource is not None:
-            for operator_el in resource.findall(f"./n:organisations/n:Operator", self.ns):
-                operator = Operator(operator_el.attrib['id'], None, None)
-                name_el = operator_el.find('./n:Name', self.ns)
-                if name_el is not None: operator.name = name_el.text
-                code_el = operator_el.find('./n:ShortName', self.ns)
-                if code_el is not None: operator.code = code_el.text
-                operators[operator.id] = operator
+        self.to_db('brandings', Branding, brandings)
         
-        if enum_list:
-            self.enum(enum_list)
-
-        authorities = {}
-        areas = {}
-        @dataclass
-        class Authority:
-            id: str
-            name: Optional[str] = None
-            code: Optional[str] = None  
-
-        @dataclass
-        class Area:
-            id: str
-            name: Optional[str] = None
-            code: Optional[str] = None
-
-        if resource is not None:
-            for authority_el in resource.findall(f'./n:organisations/n:Authority', self.ns):
-                authority_data = Authority(authority_el.attrib['id'])
-                name = authority_el.find('./n:Name', self.ns)
-                if name is not None:
-                    authority_data.name = name.text
-                code = authority_el.find('./n:ShortName', self.ns)
-                if code is not None:
-                    authority_data.code = code.text
-                authorities[authority_data.id] = authority_data
-
-        if general_frame is not None: 
-            for area_el in general_frame.findall(f"./n:members/n:TransportAdministrativeZone", self.ns):
-                area_data = Area(area_el.attrib['id'])
-                name = area_el.find('./n:Name', self.ns)
-                if name is not None:
-                    area_data.name = name.text
-                code = area_el.find('./n:ShortName', self.ns)
-                if code is not None:
-                    area_data.code = code.text
-
-                areas[area_data.id] = area_data
-
-        rel_responsibility_area = []
-        @dataclass
-        class RelResponsibilityArea:
-            responsibility: str
-            area_ref: Optional[str] = None
-
-        if resource is not None:
-            for role in resource.findall(f"./n:responsibilitySets/n:ResponsibilitySet/n:roles", self.ns):
-                for responsibility in role.findall('./n:ResponsibilityRoleAssignment', self.ns):
-                    role_data = RelResponsibilityArea(role.find('..').attrib['id'])
-
-                    area = responsibility.find('./n:ResponsibleAreaRef', self.ns)
-                    if area is not None:
-                        role_data.area_ref = area.attrib['ref']
-
-                        rel_responsibility_area.append(role_data)
-                        
-
-
-
-                # roletypes = role.find('./n:StakeholderRoleType', self.ns)
-                # organisation = role.find('./n:StakeholderRoleType', self.ns)
-
-                # if (roletypes is not None and 'EntityLegalOwnership' in roletypes.text.split(' ')) or roletypes is None:
-                #     area = role.find('./n:ResponsibleAreaRef', self.ns)
-                #     if area is not None:
-                #         role_data['area_ref'] = area.attrib['ref']
-                
-                # roles[role_data['id']] = role_data
+    def get_product_types(self, resource:ET.Element):
+        product_types: dict[str, ProductType] = {}
         
-        lines = {}
-        @dataclass
-        class Line:
-            id: str
-            code: Optional[str] = None
-            branding: Optional[str] = None
-            name: Optional[str] = None
-            number: Optional[str] = None
-            transport_mode: Optional[str] = None
-            transport_sub_mode: Optional[str] = None
-            public_code: Optional[str] = None
-            authority: Optional[str] = None
-            operator: Optional[str] = None
-            type_of_product: Optional[str] = None
-            type_of_service: Optional[str] = None
-            responsibility_set: Optional[str] = None
-            custom_category: Optional[str] = None
+        
+
+        for product_el in resource.findall(f"./n:typesOfValue/n:TypeOfProductCategory", self.ns):
+            product = ProductType(product_el.attrib['id'], None)
+            name = product_el.find('./n:Name', self.ns)
+            if name is not None:
+                product.name = name.text
+            
+            product_types[product.id] = product
+        
+        self.to_db('product_types', ProductType, product_types)
+    
+    def get_operators(self, resource:ET.Element):
+        operators: dict[str, Operator] = {}
+
+        for operator_el in resource.findall(f"./n:organisations/n:Operator", self.ns):
+            operator = Operator(operator_el.attrib['id'], None, None)
+            name_el = operator_el.find('./n:Name', self.ns)
+            if name_el is not None: operator.name = name_el.text
+            code_el = operator_el.find('./n:ShortName', self.ns)
+            if code_el is not None: operator.code = code_el.text
+            operators[operator.id] = operator
+
+            self.known_ids['operators'].append(operator.id)
+        
+        self.to_db('operators', Operator, operators)
+    
+    def get_authorities(self, resource:ET.Element):
+        authorities: dict[str, Authority] = {}
+
+        for authority_el in resource.findall(f'./n:organisations/n:Authority', self.ns):
+            authority_data = Authority(authority_el.attrib['id'])
+            name = authority_el.find('./n:Name', self.ns)
+            if name is not None:
+                authority_data.name = name.text
+            code = authority_el.find('./n:ShortName', self.ns)
+            if code is not None:
+                authority_data.code = code.text
+            authorities[authority_data.id] = authority_data
+        
+        self.to_db('authorities', Authority, authorities)
+
+    def get_areas(self, general_frame:ET.Element):
+        areas: dict[str, Area] = {}
+
+        for area_el in general_frame.findall(f"./n:members/n:TransportAdministrativeZone", self.ns):
+            area_data = Area(area_el.attrib['id'])
+            name = area_el.find('./n:Name', self.ns)
+            if name is not None:
+                area_data.name = name.text
+            code = area_el.find('./n:ShortName', self.ns)
+            if code is not None:
+                area_data.code = code.text
+
+            areas[area_data.id] = area_data
+        
+        self.to_db('areas', Area, areas)
+
+    def get_rel_responsibility_area(self, resource:ET.Element):
+        rel_responsibility_area: dict[str, RelResponsibilityArea] = []
+
+        for role in resource.findall(f"./n:responsibilitySets/n:ResponsibilitySet/n:roles", self.ns):
+            for responsibility in role.findall('./n:ResponsibilityRoleAssignment', self.ns):
+                role_data = RelResponsibilityArea(role.find('..').attrib['id'])
+
+                area = responsibility.find('./n:ResponsibleAreaRef', self.ns)
+                if area is not None:
+                    role_data.area_ref = area.attrib['ref']
+
+                    rel_responsibility_area.append(role_data)
+        
+        self.to_db('rel_responsibility_area', RelResponsibilityArea, dict(
+            (str(i), x) for i, x in enumerate(rel_responsibility_area)
+        ))
+
+    def get_lines(self, service:ET.Element, resource:ET.Element):
+        lines: dict[str, Line] = {}
 
         for line in service.findall('./n:lines/n:Line', self.ns):
             line_data = Line(
@@ -307,10 +271,14 @@ class NetexNL:
             if operator_ref_el is not None and resource is not None:
                 line_data.operator = operator_ref_el.attrib['ref']
             else:
-                if self.defaults['datasource'] not in operators:
-                    operators[self.defaults['datasource']] = Operator(self.defaults['datasource'],
-                    self.defaults['datasource_code'],
-                    self.defaults['datasource'])
+                if self.defaults['datasource'] not in self.known_ids['operators']:
+                    self.to_db('operators', Operator, {
+                        self.defaults['datasource']:Operator(self.defaults['datasource'],
+                            self.defaults['datasource_code'],
+                            self.defaults['datasource']
+                            )
+                    })
+
                 line_data.operator = self.defaults['datasource']
 
             if 'responsibilitySetRef' in line.attrib:
@@ -323,21 +291,12 @@ class NetexNL:
 
             lines[line_data.id] = line_data
 
+        self.to_db('lines', Line, lines)
 
-        routes = {}
-        @dataclass
-        class Route:
-            id: str
-            line: Optional[str] = None
-            direction: Optional[str] = None
+    def get_routes(self, service:ET.Element):
+        routes: dict[str, Route] = {}
 
-        rel_point_route = []
-        @dataclass
-        class RelPointRoute:
-            route: str
-            point_order: int
-            point: str
-            link: Optional[str] = None
+        rel_point_route: list[RelPointRoute] = []
 
         for route in service.findall('./n:routes/n:Route', self.ns):
             route_data = Route(route.attrib['id'])
@@ -375,11 +334,13 @@ class NetexNL:
             
             routes[route_data.id] = route_data
         
-        routepoints = {}
-        @dataclass
-        class Routepoint:
-            id: str
-            location: Optional[str] = None
+        self.to_db('rel_point_route', RelPointRoute, dict(
+            (str(i), x) for i, x in enumerate(rel_point_route)
+        ))
+        self.to_db('routes', Route, routes)
+
+    def get_routepoints(self, service:ET.Element):
+        routepoints: dict[str, Routepoint] = {}
 
         for point in service.findall(f"./n:routePoints/n:RoutePoint", self.ns):
             routepoint_data = Routepoint(point.attrib['id'])
@@ -405,12 +366,11 @@ class NetexNL:
 
 
             routepoints[routepoint_data.id] = routepoint_data
+        
+        self.to_db('routepoints', Routepoint, routepoints)
 
-        routelinks = {}
-        @dataclass
-        class Routelink:
-            id: str
-            location: Optional[str] = None
+    def get_routelinks(self, service:ET.Element):
+        routelinks: dict[str, Routelink] = {}
 
         for link in service.findall(f"./n:routeLinks/n:RouteLink", self.ns):
             link_data = Routelink(link.attrib['id'])
@@ -425,46 +385,13 @@ class NetexNL:
             link_data.location = " ".join(" ".join(map(str, x)) for x in coords)
 
             routelinks[link_data.id] = link_data
-
-        if site is not None:
-            self.site_enum(site)   
         
-        self.to_db('rel_point_route', dict(
-            (str(i), x) for i, x in enumerate(rel_point_route)
-        ))
-        self.to_db('rel_responsibility_area', dict(
-            (str(i), x) for i, x in enumerate(rel_responsibility_area)
-        ))
-        self.to_db('brandings', brandings)
-        self.to_db('product_types', product_types)
-        self.to_db('operators', operators)
-        self.to_db('authorities', authorities)
-        self.to_db('areas', areas)
-        self.to_db('lines', lines)
-        self.to_db('routes', routes)
-        self.to_db('routepoints', routepoints)
-        self.to_db('routelinks', routelinks)
+        self.to_db('routelinks', Routelink, routelinks)
 
-        return None
-    
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, general_frame:Optional[ET.Element]=None, resource:Optional[ET.Element]=None, enum_list:Optional[list[ET.Element]]=None, loom=True, time_table = True):
+    def get_run_waittimes(self, service:ET.Element):
+        runtimes: dict[str, Runtime] = {} 
+        waittimes: dict[str, Waittime]  = {}
         
-        runtimes = {}
-        @dataclass 
-        class Runtime:
-            id: str
-            time_demand_type: str
-            timing_link: Optional[str] = None
-            time: Optional[float] = None
-
-        waittimes = {}
-        @dataclass 
-        class Waittime:
-            id: str
-            time_demand_type: str
-            scheduled_stop_point: Optional[str] = None
-            timing_point: Optional[str] = None
-            time: Optional[float] = None
 
         for time_demand_type in service.findall('./n:timeDemandTypes/n:TimeDemandType', self.ns):
             for runtime in time_demand_type.findall('./n:runTimes/n:JourneyRunTime', self.ns):
@@ -501,11 +428,11 @@ class NetexNL:
                 
                 waittimes[waittime_data.id] = waittime_data
 
-        timing_links = {}
-        @dataclass
-        class TimingLink:
-            id: str
-            distance: float = 0.0
+        self.to_db('runtimes', Runtime, runtimes)
+        self.to_db('waittimes', Waittime, waittimes)
+
+    def get_timing_links(self, service:ET.Element):
+        timing_links: dict[str, TimingLink] = {}
         
         for timing_link in service.findall('./n:timingLinks/n:TimingLink', self.ns):
             timing_link_data = TimingLink(timing_link.attrib['id'])
@@ -516,36 +443,27 @@ class NetexNL:
         
             timing_links[timing_link_data.id] = timing_link_data
 
-        rel_timing_route_points = []
-        @dataclass
-        class RelTimingRoutePoints:
-            id: str
-            routepoint: str = None
+        self.to_db('timing_links', TimingLink, timing_links)
+
+    def get_rel_timing_route_points(self, service:ET.Element):
+        rel_timing_route_points: list[RelTimingRoutePoint] = []
 
         for timing_point in service.findall('./n:timingPoints/n:TimingPoint', self.ns):
             route_point_el = timing_point.find('./n:projections/n:PointProjection/n:ProjectToPointRef', self.ns)
             if route_point_el is not None and 'ref' in route_point_el.attrib:
-                rel_timing_route_points.append(RelTimingRoutePoints(
+                rel_timing_route_points.append(RelTimingRoutePoint(
                     timing_point.attrib['id'],
                     route_point_el.attrib['ref']
                 ))
-
-        patterns = {}
-        @dataclass
-        class Pattern:
-            id: str
-            route: Optional[str] = None
-            direction: Optional[str] = None
-
-        points_in_pattern = {}
-        @dataclass
-        class PointInPattern:
-            id: str
-            pattern: str
-            point_order: Optional[int] = None
-            timing_point: Optional[str] = None
-            stoppoint: Optional[str] = None
-            timing_link: Optional[str] = None
+        
+        self.to_db('rel_timing_route_points', RelTimingRoutePoint, dict(
+            (str(i), x) for i, x in enumerate(rel_timing_route_points)
+        ))
+    
+    def get_patterns(self, service:ET.Element):
+        patterns: dict[str, Pattern] = {}
+        points_in_pattern: dict[str, PointInPattern] = {}
+        
         
         for pattern in service.findall('./n:journeyPatterns/n:ServiceJourneyPattern', self.ns):
             pattern_data = Pattern(pattern.attrib['id'])
@@ -577,15 +495,12 @@ class NetexNL:
                 points_in_pattern[point_data.id] = point_data
             
             patterns[pattern_data.id] = pattern_data
+        
+        self.to_db('patterns', Pattern, patterns)
+        self.to_db('points_in_pattern', PointInPattern, points_in_pattern)
 
-        scheduled_stop_points = {}
-        @dataclass
-        class ScheduledStopPoint:
-            id: str
-            route_point: Optional[str] = None
-            name: Optional[str] = None
-            stop_area: Optional[str] = None
-            location: Optional[str] = None
+    def get_scheduled_stop_points(self, service:ET.Element):
+        scheduled_stop_points: dict[str, ScheduledStopPoint] = {}
 
         for stop_point in service.findall('./n:scheduledStopPoints/n:ScheduledStopPoint', self.ns):
             if 'id' not in stop_point.attrib: continue
@@ -623,16 +538,11 @@ class NetexNL:
                 )
 
             scheduled_stop_points[stop_point_data.id] = stop_point_data
-                                        
+        
+        self.to_db('scheduled_stop_points', ScheduledStopPoint, scheduled_stop_points)
 
-        stop_areas = {}
-        @dataclass
-        class StopArea:
-            id: str
-            public_code: Optional[str] = None
-            private_code: Optional[str] = None
-            name: Optional[str] = None
-            place_name: Optional[str] = None
+    def get_stop_areas(self, service:ET.Element):
+        stop_areas: dict[str, StopArea] = {}
 
         for stop_area in service.findall('./n:stopAreas/n:StopArea', self.ns):
             stop_area_data = StopArea(stop_area.attrib['id'])
@@ -653,14 +563,11 @@ class NetexNL:
 
             stop_areas[stop_area_data.id] = stop_area_data
 
-        validity_conditions = {}
-        @dataclass
-        class AvailabilityCondition:
-            id: str
-            available_from: Optional[str] = None
-            available_through: Optional[str] = None
-            bits: Optional[str] = None
+        self.to_db('stop_areas', StopArea, stop_areas)
 
+    def get_validity_conditions(self, timetable:ET.Element):
+        validity_conditions: dict[str, AvailabilityCondition] = {}
+        
         for condition in timetable.findall('./n:contentValidityConditions/n:AvailabilityCondition', self.ns):
             condition_data = AvailabilityCondition(condition.attrib['id'])
 
@@ -672,24 +579,13 @@ class NetexNL:
             if condition_bits is not None: condition_data.bits = condition_bits.text
 
             validity_conditions[condition_data.id] = condition_data
+        
+        self.to_db('validity_conditions', AvailabilityCondition, validity_conditions)
 
-        journeys = {}
-        @dataclass
-        class Journey:
-            id: str
-            number: Optional[str] = None
-            pattern: Optional[str] = None
-            in_scope_of_operator: Optional[bool] = None
-            realtime_info: Optional[bool] = None
-            vehicle_type: Optional[str] = None
-            starting_time: Optional[str] = None
-            time_demand_type: Optional[str] = None
+    def get_journeys(self, timetable:ET.Element):
+        journeys: dict[str, Journey] = {}
+        availabilities_per_journey: list[AvailabilityPerJourney] = []
 
-        availabilities_per_journey = []
-        @dataclass
-        class AvailabilityPerJourney:
-            journey: str
-            availability: str
 
         for journey in timetable.findall('./n:vehicleJourneys/n:ServiceJourney', self.ns):
             journey_data = Journey(journey.attrib['id'])
@@ -702,7 +598,7 @@ class NetexNL:
                 journey_data.time_demand_type = time_demand_type_ref.attrib['ref']
             
             pattern_ref = journey.find('./n:ServiceJourneyPatternRef', self.ns)
-            if pattern_ref is not None and patterns is not None:
+            if pattern_ref is not None: # and patterns is not None
                 journey_data.pattern = pattern_ref.attrib["ref"]
 
             if journey.find('./n:validityConditions', self.ns) is not None:
@@ -729,13 +625,15 @@ class NetexNL:
             if realtime_info_el is not None: journey_data.realtime_info = (realtime_info_el.text == 'true')
 
             journeys[journey_data.id] = journey_data
+        
+        self.to_db('journeys', Journey, journeys)
+        self.to_db('availabilities_per_journey', AvailabilityPerJourney, dict(
+            (str(i), x) for i, x in enumerate(availabilities_per_journey)
+        ))
 
-        rel_stoppoint_quaycode = {}
-        @dataclass 
-        class RelStoppointQuaycode:
-            id: Optional[str] = None
-            quay: Optional[str] = None
-
+    def get_rel_stoppoint_quaycode(self, service:ET.Element):
+        rel_stoppoint_quaycode: dict[str, RelStoppointQuaycode] = {}
+        
         for stop in service.findall(f'./n:stopAssignments/n:PassengerStopAssignment', self.ns):
             stop_data = RelStoppointQuaycode()
             stoppoint_el = stop.find(f'./n:ScheduledStopPointRef', self.ns)
@@ -750,79 +648,13 @@ class NetexNL:
             )
 
             rel_stoppoint_quaycode[stop_data.id] = stop_data
+        
+        self.to_db('rel_stoppoint_quaycode', RelStoppointQuaycode, rel_stoppoint_quaycode)
 
-        self.to_db('runtimes', runtimes)
-        self.to_db('waittimes', waittimes)
-        self.to_db('timing_links', timing_links)
-        self.to_db('patterns', patterns)
-        self.to_db('points_in_pattern', points_in_pattern)
-        self.to_db('scheduled_stop_points', scheduled_stop_points)
-        self.to_db('stop_areas', stop_areas)
-        self.to_db('validity_conditions', validity_conditions)
-        self.to_db('journeys', journeys)
-        self.to_db('rel_stoppoint_quaycode', rel_stoppoint_quaycode)
-        self.to_db('availabilities_per_journey', dict(
-            (str(i), x) for i, x in enumerate(availabilities_per_journey)
-        ))
-        self.to_db('rel_timing_route_points', dict(
-            (str(i), x) for i, x in enumerate(rel_timing_route_points)
-        ))
+    def get_stopplaces(self, site:ET.Element):
+        rel_quay_stopplace: list[rel_quay_stopplace] = []
+        stopplaces: dict[str, Stopplace] = {}
 
-    def getNotices(self, service:ET.Element, #only_used=True
-    ):
-        notices = service.find('./n:notices', self.ns)
-        notice_assignments = service.find('./n:noticeAssignments', self.ns)
-
-        if notices is None or notice_assignments is None: return
-
-        con = sqlite3.connect(f'{self.defaults['output_folder']}/netex.db')
-        cur = con.cursor()
-
-        processed_notices = {}
-        @dataclass
-        class Notice:
-            id: str
-            notice_for: str
-            text: str
-        for assignment in notice_assignments.findall('./*', self.ns):
-            notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
-            if notice_for_el is None or 'ref' not in notice_for_el.attrib: continue
-            notice_for = notice_for_el.attrib['ref']
-
-            # if only_used and notice_for not in self.notice_able_ids: continue
-
-            notice_id_el = assignment.find('./n:NoticeRef', self.ns)
-            if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
-            notice_id = notice_id_el.attrib['ref']
-
-            notice_text_el = notices.find(f'./n:Notice[@id="{notice_id}"]/n:Text',self.ns)
-            if notice_text_el is None: continue
-            notice_text = notice_text_el.text
-
-            processed_notices[notice_id] = Notice(notice_id, notice_for, notice_text)
-            
-        self.to_db('notices', processed_notices)     
-
-    def enum(self, enum_list:list[ET.Element]=[]):
-        frames = []
-        for enum in enum_list:
-            frames.extend(enum.findall('./n:dataObjects/n:CompositeFrame', self.ns))
-        self.enum_frames(frames)
-
-    def site_enum(self, site:ET.Element):
-        rel_quay_stopplace = []
-        @dataclass
-        class RelQuayStopplace:
-            stopplace: str
-            quay: str
-
-        stopplaces = {}
-        @dataclass
-        class Stopplace:
-            id: str
-            name: Optional[str] = None
-            location: Optional[str] = None
-    
         for stopplace_el in site.findall(f"./n:stopPlaces/n:StopPlace", self.ns):
             code_el = stopplace_el.find('./n:privateCodes/n:PrivateCode[@type="StopPlaceCode"]', self.ns)
             if code_el is None: continue
@@ -849,10 +681,84 @@ class NetexNL:
 
             stopplaces[stopplace_data.id] = stopplace_data
 
-        self.to_db('rel_quay_stopplace', dict(
+        self.to_db('rel_quay_stopplace', RelQuayStopplace, dict(
             (str(i), x) for i, x in enumerate(rel_quay_stopplace)
         ))
-        self.to_db('stopplaces', stopplaces)
+        self.to_db('stopplaces', Stopplace, stopplaces)
+
+    def getNotices(self, service:ET.Element, #only_used=True
+    ):
+        notices = service.find('./n:notices', self.ns)
+        notice_assignments = service.find('./n:noticeAssignments', self.ns)
+
+        if notices is None or notice_assignments is None: return
+
+        processed_notices: dict[str, Notice] = {}
+        
+        for assignment in notice_assignments.findall('./*', self.ns):
+            notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
+            if notice_for_el is None or 'ref' not in notice_for_el.attrib: continue
+            notice_for = notice_for_el.attrib['ref']
+
+            # if only_used and notice_for not in self.notice_able_ids: continue
+
+            notice_id_el = assignment.find('./n:NoticeRef', self.ns)
+            if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
+            notice_id = notice_id_el.attrib['ref']
+
+            notice_text_el = notices.find(f'./n:Notice[@id="{notice_id}"]/n:Text',self.ns)
+            if notice_text_el is None: continue
+            notice_text = notice_text_el.text
+
+            processed_notices[notice_id] = Notice(notice_id, notice_for, notice_text)
+            
+        self.to_db('notices', Notice, processed_notices)  
+
+    def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None):
+
+        if resource is not None:
+            self.get_brandings(resource)
+            self.get_product_types(resource)
+            self.get_operators(resource)
+            self.get_authorities(resource)
+            self.get_rel_responsibility_area(resource)
+        
+        if general_frame is not None: 
+            self.get_areas(general_frame)
+        
+        if service is not None:
+            self.get_lines(service, resource)
+            self.get_routes(service)
+            self.get_routepoints(service)
+            self.get_routelinks(service)
+
+        if site is not None:
+            self.site_enum(site)   
+
+    
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element):
+
+        if service is not None:
+            self.get_run_waittimes(service)
+            self.get_timing_links(service)
+            self.get_timing_links(service)
+            self.get_rel_timing_route_points(service)
+            self.get_patterns(service)
+            self.get_scheduled_stop_points(service)
+            self.get_stop_areas(service)
+        
+        if timetable is not None:
+            self.get_validity_conditions(timetable)
+            self.get_journeys(timetable)   
+
+    def enum(self, enum_list:list[ET.Element]=[]):
+        frames = []
+        for enum in enum_list:
+            frames.extend(enum.findall('./n:dataObjects/n:CompositeFrame', self.ns))
+        self.enum_frames(frames)
+
+    def site_enum(self, site:ET.Element):
+        self.get_stopplaces(site)
 
 
     def enum_frames(self, compositeFrames:list[ET.Element]=[]):
@@ -911,15 +817,18 @@ class NetexNL:
             if compositeFrame.find(f"./n:frames/n:SiteFrame", self.ns) is not None:
                 self.site_enum(compositeFrame.find(f"./n:frames/n:SiteFrame", self.ns))
 
-        self.to_db('authorities', authorities)
-        self.to_db('areas', areas)
-        self.to_db('types_of_service', types_of_service)
+        self.to_db('authorities', Authority, authorities)
+        self.to_db('areas', Area, areas)
+        self.to_db('types_of_service', TypeOfService, types_of_service)
 
         def __init__(self, defaults, options):
             self.defualts = defaults
             self.options = options
 
     def __init__(self, defaults, options, ns, transformer=None):
+        self.known_ids = {
+            'operators':[]
+        }
         self.con = None
         self.cur = None
         self.defaults = defaults

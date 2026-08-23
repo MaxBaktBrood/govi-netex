@@ -7,7 +7,7 @@ from netex_processing.nl import NetexNL
 
 class Netex:
 
-    def __init__(self, file = None, str_content = None, enum_list=None, options={}):
+    def __init__(self, file = None, str_content = None, options={}):
         self.defaults = {
             'datasource':None,
             'datasource_code':None,
@@ -109,11 +109,11 @@ class Netex:
                 continue
 
 
-            self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site, enum_list=enum_list)
+            self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site)
 
             if timetable is None: continue
 
-            self.journeys = processer.craftJourneys(service=service, resource=resource, timetable=timetable, general_frame=general, enum_list=enum_list)
+            self.journeys = processer.craftJourneys(service=service, timetable=timetable)
 
             processer.getNotices(service=service)
 
