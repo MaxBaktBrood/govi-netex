@@ -11,6 +11,7 @@ from b_source import getNetexB
 from plot import plot_layer
 import sys
 import shutil
+from io import StringIO
 
 input_folder = './input'
 output_folder = './output'
@@ -93,6 +94,9 @@ if 'INPUT' in data_sources:
             file = gzip.open(path, 'r')
             content = file.read()
             netex = Netex(str_content=content)
+        
+        if split_path[1] == '.xml':
+            netex = Netex(file=path)
 
 # print('Afbeelding maken...')
 # plot_layer(geopandas.read_file(f'{output_folder}/netex.gpkg', layer='routes'), output_folder=output_folder)

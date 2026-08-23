@@ -3,6 +3,7 @@ import os
 from zoneinfo import ZoneInfo
 from pyproj import Transformer
 from netex_processing.nl import NetexNL
+from netex_processing.epip import NetexEPIP
 
 
 class Netex:
@@ -100,6 +101,8 @@ class Netex:
             match self.defaults['frametype']['general']:
                 case 'NL':
                     processer = NetexNL(self.defaults, self.options, self.ns, self.transformer)
+                case 'epip':
+                    processer = NetexEPIP(self.defaults, self.options, self.ns, self.transformer)
                 case _:
                     processer = NetexNL(self.defaults, self.options, self.ns, self.transformer)
 
