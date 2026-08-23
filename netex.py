@@ -123,7 +123,7 @@ class Netex:
 
             processer.db_indexes()
 
-        if len(enum_frames) > 0: self.enum_frames(enum_frames)
+        if len(enum_frames) > 0: processer.enum_frames(enum_frames)
 
         if processer.cur: processer.cur.close()
         if processer.con: processer.con.close()
