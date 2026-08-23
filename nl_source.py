@@ -18,8 +18,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
     username = secrets['NL_username']
     password = secrets['NL_password']
 
-    latest_data_files = {}
-    latest_enum_files = {}
+    latest_files = {}
 
     with paramiko.SSHClient() as client:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -53,14 +52,10 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                             if re.match('[a-zA-Z]', name_part):
                                 file_topic += name_part
 
-                        if netex_type == 'data':
-                            latest_data_files.setdefault(file_topic, netex_file)
-                        if netex_type == 'enum':
-                            latest_enum_files.setdefault(file_topic, netex_file)
+                        latest_files.setdefault(file_topic, netex_file)
 
-            enum_list = []
 
-            for file in latest_enum_files.values():
+            for file in latest_files.values():
                 print(f'Verwerken van {file}')
                 io = BytesIO()
                 sftp.getfo(file, io)
@@ -71,21 +66,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                 if split_path[1] == '.gz':
                     gzip_file = gzip.open(io, 'r')
                     content = gzip_file.read()
-                    enum_list.append(content)
-
-
-            for file in latest_data_files.values():
-                print(f'Verwerken van {file}')
-                io = BytesIO()
-                sftp.getfo(file, io)
-                io.seek(0)
-
-                split_path = os.path.splitext(file)
-
-                if split_path[1] == '.gz':
-                    gzip_file = gzip.open(io, 'r')
-                    content = gzip_file.read()
-                    netex = Netex(str_content=content, enum_list=enum_list)
+                    netex = Netex(str_content=content)
         
 
 

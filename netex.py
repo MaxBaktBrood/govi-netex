@@ -7,19 +7,18 @@ from netex_processing.nl import NetexNL
 
 class Netex:
 
-   
-    defaults = {
-        'datasource':None,
-        'datasource_code':None,
-        'responsibility_set':None,
-        'from_crs':4326,
-        'to_crs':4326, # 4326 = wgs84,
-        'timezone':ZoneInfo('UTC'),
-        'frametype':{'general':None, 'specific':None},
-        'output_folder':'./output'
-    }
-
     def __init__(self, file = None, str_content = None, enum_list=None, options={}):
+        self.defaults = {
+            'datasource':None,
+            'datasource_code':None,
+            'responsibility_set':None,
+            'from_crs':4326,
+            'to_crs':4326, # 4326 = wgs84,
+            'timezone':ZoneInfo('UTC'),
+            'frametype':{'general':None, 'specific':None},
+            'output_folder':'./output'
+        }
+        
         if file is None and str_content is None:
             raise Exception('File or string required')
 
@@ -34,9 +33,6 @@ class Netex:
         else:
             tree = ET.fromstring(str_content, parser)
             self.root = tree
-        
-        if enum_list is not None:
-            enum_list = list(map(lambda x: ET.fromstring(x), enum_list))
 
         self.ns = {
             'n':'http://www.netex.org.uk/netex',
@@ -49,7 +45,7 @@ class Netex:
 
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
-        enum_frames = []
+        enum_frames = {}
 
         for compositeFrame in compositeFrames:
             general = compositeFrame.find('./n:frames/n:GeneralFrame', self.ns)
@@ -99,11 +95,6 @@ class Netex:
             if found_timezone is not None:
                 self.defaults['timezone'] = ZoneInfo(found_timezone.text)
 
-            if service is None: 
-                if general is not None or resource is not None or site is not None:
-                    enum_frames.append(compositeFrame)
-                continue
-
             processer = None
 
             match self.defaults['frametype']['general']:
@@ -111,6 +102,11 @@ class Netex:
                     processer = NetexNL(self.defaults, self.options, self.ns, self.transformer)
                 case _:
                     processer = NetexNL(self.defaults, self.options, self.ns, self.transformer)
+
+            if service is None: 
+                if general is not None or resource is not None or site is not None:
+                    processer.enum_frames([compositeFrame])
+                continue
 
 
             self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site, enum_list=enum_list)
@@ -123,7 +119,6 @@ class Netex:
 
             processer.db_indexes()
 
-        if len(enum_frames) > 0: processer.enum_frames(enum_frames)
 
         if processer.cur: processer.cur.close()
         if processer.con: processer.con.close()
