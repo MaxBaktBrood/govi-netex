@@ -8,7 +8,6 @@ from netex import Netex
 from zipfile import ZipFile
 import gzip
 import os
-from epiap import Epiap
 
 def getNetexNL(secrets: dict={}, whitelist: list=None):
     if 'NL_username' not in secrets or 'NL_password' not in secrets:
