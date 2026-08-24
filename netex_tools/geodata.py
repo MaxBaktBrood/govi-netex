@@ -1,5 +1,6 @@
 import sqlite3
 import geopandas
+import sys
 
 db_path = './output/netex.db'
 
@@ -21,13 +22,14 @@ LEFT JOIN routelinks ON rel_point_route.link = routelinks.id
 INNER JOIN routes ON routes.id = rel_point_route.route
 LEFT JOIN lines ON lines.id = routes.line
 LEFT JOIN brandings ON brandings.id = lines.branding
-LEFT JOIN rel_responsibility_area ON rel_responsibility_area.responsibility = lines.responsibility_set
+LEFT JOIN rel_responsibility_area ON rel_responsibility_area.responsibility = lines.responsibility_set --areas veroorzaakt problemen
 LEFT JOIN areas ON areas.id = rel_responsibility_area.area_ref
 LEFT JOIN authorities ON authorities.id = lines.authority
 LEFT JOIN operators ON operators.id = lines.operator
 LEFT JOIN product_types ON product_types.id = lines.type_of_product
 --product service responsibility_set
 GROUP BY route
+ORDER BY rel_point_route.route, rel_point_route.point_order
     """)
 
     lines = lines_query.fetchall()
@@ -42,7 +44,7 @@ GROUP BY route
             "geometry": {
                 "type": "LineString",
                 "coordinates": [
-                    [coords[x + x + 1], coords[x + x]] for x in range(int(len(coords) / 2))
+                    list(map(float, [coords[x + x + 1], coords[x + x]])) for x in range(int(len(coords) / 2))
                 ]
             },
             "properties": dict(
@@ -69,6 +71,11 @@ GROUP BY route
                 )
             )
         }
+
+        import json
+        open('./output/lines.json', 'w').write(json.dumps(json_feature))
+        raise Exception('test')
+
         if mode == 'shp':
             geopandas.GeoDataFrame.from_features({
                 'type':'FeatureCollection',
@@ -81,4 +88,8 @@ GROUP BY route
             }).to_file('./output/lines.gpkg', driver='gpkg', mode='a')
 
 if __name__ == '__main__':
-    lines_geodata()
+
+    if len(sys.argv) > 1:
+        lines_geodata(mode=sys.argv[1])
+    else:
+        lines_geodata()
