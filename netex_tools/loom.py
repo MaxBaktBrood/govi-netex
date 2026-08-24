@@ -1,12 +1,21 @@
 import sqlite3
 import orjson as json
+from typing import Optional
+import sys
 
 db_path = './output/netex.db'
 
-def loom():
+def loom(line_ids:list=[]):
     con = sqlite3.connect(db_path)
     
     cur = con.cursor()
+
+    line_filter = ""
+    if len(line_ids) > 0:
+        line_filter = f"WHERE {
+            " OR ".join(list(map(lambda x: f'lines.id = "{x}"', line_ids)))
+        }"
+
 
     stopplaces_query = cur.execute("""
 SELECT stopplaces.* from stopplaces
@@ -15,7 +24,7 @@ SELECT stopplaces.* from stopplaces
     stopplaces = stopplaces_query.fetchall()
 
     lines_query = cur.execute(
-        """
+        f"""
 SELECT pip.pattern, pip.point_order, CASE WHEN stoppoint IS NOT NULL THEN 'stoppoint' WHEN timing_point IS NOT NULL THEN 'timing_point' ELSE NULL END AS "point",
 pip.line_id, pip.line_label, stopplace ,CONCAT(tp_routepoint, ssp_routepoint) as "routepoint_2", routelinks.location FROM (
 SELECT pip.pattern, pip.point_order, pip.stoppoint, pip.timing_point, lines.id as "line_id", lines.number as "line_label",
@@ -43,6 +52,7 @@ FROM points_in_pattern pip
 LEFT JOIN patterns ON patterns.id = pip.pattern
 LEFT JOIN routes ON routes.id = patterns.route
 LEFT JOIN lines ON lines.id = routes.line
+{line_filter}
 ) AS pip
 LEFT JOIN patterns ON patterns.id = pip.pattern
 LEFT JOIN routes ON routes.id = patterns.route
@@ -162,4 +172,8 @@ ORDER BY pip.pattern AND pip.point_order
     open('./output/loom.json', 'wb').write(json.dumps(result))
 
 if __name__ == "__main__":
-    loom()
+
+    if len(sys.argv) > 1:
+        loom(sys.argv[1:])
+    else:
+        loom()
