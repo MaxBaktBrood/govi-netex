@@ -33,6 +33,7 @@ class Area:
 
 @dataclass
 class RelResponsibilityArea:
+    id: str
     responsibility: str
     area_ref: Optional[str] = None
 

@@ -155,21 +155,19 @@ class NetexNL:
         self.to_db('areas', Area, areas)
 
     def get_rel_responsibility_area(self, resource:ET.Element):
-        rel_responsibility_area: dict[str, RelResponsibilityArea] = []
+        rel_responsibility_area: dict[str, RelResponsibilityArea] = {}
 
         for role in resource.findall(f"./n:responsibilitySets/n:ResponsibilitySet/n:roles", self.ns):
             for responsibility in role.findall('./n:ResponsibilityRoleAssignment', self.ns):
-                role_data = RelResponsibilityArea(role.find('..').attrib['id'])
+                role_data = RelResponsibilityArea(responsibility.attrib['id'], role.find('..').attrib['id'])
 
                 area = responsibility.find('./n:ResponsibleAreaRef', self.ns)
                 if area is not None:
                     role_data.area_ref = area.attrib['ref']
 
-                    rel_responsibility_area.append(role_data)
+                    rel_responsibility_area[responsibility.attrib['id']] = role_data
         
-        self.to_db('rel_responsibility_area', RelResponsibilityArea, dict(
-            (str(i), x) for i, x in enumerate(rel_responsibility_area)
-        ))
+        self.to_db('rel_responsibility_area', RelResponsibilityArea, rel_responsibility_area)
 
     def get_lines(self, service:ET.Element, resource:ET.Element):
         lines: dict[str, Line] = {}

@@ -46,8 +46,6 @@ class Netex:
 
         compositeFrames = self.root.findall('./n:dataObjects/n:CompositeFrame', self.ns)
 
-        enum_frames = {}
-
         for compositeFrame in compositeFrames:
             general = compositeFrame.find('./n:frames/n:GeneralFrame', self.ns)
             resource = compositeFrame.find('./n:frames/n:ResourceFrame', self.ns)

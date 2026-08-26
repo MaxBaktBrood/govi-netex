@@ -9,28 +9,32 @@ def lines_geodata(mode="shp"):
 
     cur = con.cursor()
 
-    lines_query = cur.execute("""
+    lines_query = cur.execute(
+    """
 SELECT route as id, lines.id as "line_id", lines.number as "line_number", lines.name as "line_name",
 lines.code as "line_code", direction, lines.transport_mode as "mode_of_transport", 
 lines.transport_sub_mode as "sub_mode_of_transport", brandings.name as "formula",
 product_types.name as "type_of_product", authorities.name as "authority", authorities.code as "authority_code",
-operators.name as "operator", operators.code as "operator_code", areas.name as "network",
-areas.id as "network_id", areas.code as "network_code", lines.type_of_service, lines.custom_category,
+operators.name as "operator", operators.code as "operator_code", network_group.network,
+network_group.network_id, network_group.network_code, lines.type_of_service, lines.custom_category,
 group_concat(routelinks.location, " ") as geodata
 FROM rel_point_route
 LEFT JOIN routelinks ON rel_point_route.link = routelinks.id
 INNER JOIN routes ON routes.id = rel_point_route.route
 LEFT JOIN lines ON lines.id = routes.line
 LEFT JOIN brandings ON brandings.id = lines.branding
-LEFT JOIN rel_responsibility_area ON rel_responsibility_area.responsibility = lines.responsibility_set --areas veroorzaakt problemen
+LEFT JOIN (
+SELECT rel_responsibility_area.responsibility,  group_concat(areas.name, ", ") AS "network", group_concat(areas.id, ", ") AS "network_id", group_concat(areas.code, ", ") AS "network_code" FROM rel_responsibility_area
 LEFT JOIN areas ON areas.id = rel_responsibility_area.area_ref
+GROUP BY rel_responsibility_area.responsibility
+) as network_group ON network_group.responsibility = lines.responsibility_set --areas veroorzaakt problemen
 LEFT JOIN authorities ON authorities.id = lines.authority
 LEFT JOIN operators ON operators.id = lines.operator
 LEFT JOIN product_types ON product_types.id = lines.type_of_product
---product service responsibility_set
 GROUP BY route
 ORDER BY rel_point_route.route, rel_point_route.point_order
-    """)
+
+""")
 
     lines = lines_query.fetchall()
 
@@ -71,10 +75,6 @@ ORDER BY rel_point_route.route, rel_point_route.point_order
                 )
             )
         }
-
-        import json
-        open('./output/lines.json', 'w').write(json.dumps(json_feature))
-        raise Exception('test')
 
         if mode == 'shp':
             geopandas.GeoDataFrame.from_features({
