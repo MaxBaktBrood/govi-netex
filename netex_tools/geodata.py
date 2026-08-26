@@ -9,6 +9,11 @@ def lines_geodata(mode="shp"):
 
     cur = con.cursor()
 
+    metadata_query = cur.execute("SELECT crs FROM _metadata")
+    metadata = metadata_query.fetchall()
+
+    crs = metadata[0][0]
+
     lines_query = cur.execute(
     """
 SELECT route as id, lines.id as "line_id", lines.number as "line_number", lines.name as "line_name",
@@ -80,12 +85,12 @@ ORDER BY rel_point_route.route, rel_point_route.point_order
             geopandas.GeoDataFrame.from_features({
                 'type':'FeatureCollection',
                 'features':[json_feature]
-            }).to_file('./output/lines.shp', mode='a')
+            }).set_crs(crs).to_file('./output/lines.shp', mode='a')
         if mode == 'gpkg':
             geopandas.GeoDataFrame.from_features({
                 'type':'FeatureCollection',
                 'features':[json_feature]
-            }).to_file('./output/lines.gpkg', driver='gpkg', mode='a')
+            }).set_crs(crs).to_file('./output/lines.gpkg', driver='gpkg', mode='a')
 
 if __name__ == '__main__':
 

@@ -5,7 +5,6 @@ from pyproj import Transformer
 from netex_processing.nl import NetexNL
 from netex_processing.epip import NetexEPIP
 
-
 class Netex:
 
     def __init__(self, file = None, str_content = None, options={}):

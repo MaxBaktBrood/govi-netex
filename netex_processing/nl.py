@@ -31,9 +31,6 @@ class NetexNL:
                 if field.name == 'id': sql_part += ' PRIMARY KEY'
 
                 cols.append(sql_part)
-            
-            if not self.con: self.con = sqlite3.connect(f'{self.defaults['output_folder']}/netex.db')
-            if not self.cur: self.cur = self.con.cursor()
 
             self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
 
@@ -78,7 +75,6 @@ class NetexNL:
     def get_brandings(self, resource:ET.Element):
         brandings: dict[str, Branding] = {}
 
-        
         for branding_el in resource.findall(f"./n:typesOfValue/n:Branding", self.ns):
             branding = Branding(branding_el.attrib['id'])
             name = branding_el.find('./n:Name', self.ns)
@@ -827,8 +823,23 @@ class NetexNL:
         self.known_ids = {
             'operators':[]
         }
-        self.con = None
-        self.cur = None
+        self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
+        self.cur = self.con.cursor()
+
+        self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL)')
+
+        metadata_query = self.cur.execute("SELECT * FROM _metadata")
+        metadata = metadata_query.fetchall()
+
+        if len(metadata) == 0:
+            self.cur.execute(f'INSERT INTO _metadata VALUES ({str(defaults['to_crs'])})')
+            self.con.commit()
+        else:
+            crs = metadata[0][0]
+
+            if crs != str(defaults['to_crs']):
+                raise Exception(f'Coordinates are in a different CRS compared to existing data: {crs} {str(defaults['to_crs'])}')
+
         self.defaults = defaults
         self.options = options
         self.transformer = transformer
