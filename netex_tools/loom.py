@@ -2,6 +2,49 @@ import sqlite3
 import orjson as json
 from typing import Optional
 import sys
+from shapely.wkt import loads
+import shapely
+from shapely.geometry import *
+import random
+
+loom_line_colors = {}
+def loom_line_color(id):
+    if id in loom_line_colors: return loom_line_colors[id]
+    r = lambda: random.randint(0, 255)
+    loom_line_colors[id] = '#%02X%02X%02X' % (r(), r(), r())
+    return loom_line_colors[id]
+
+def cut_piece(line, distance):
+    def cut(line, distance):
+    # Cuts a line in two at a distance from its starting point
+        if distance <= 0.0 or distance >= line.length:
+            return [LineString(line)]
+        coords = list(line.coords)
+        for i, p in enumerate(coords):
+            pd = line.project(Point(p))
+            if pd == distance:
+                return [
+                    LineString(coords[:i+1]),
+                    LineString(coords[i:])]
+            if pd > distance:
+                cp = line.interpolate(distance)
+                return [
+                    LineString(coords[:i] + [(cp.x, cp.y)]),
+                    LineString([(cp.x, cp.y)] + coords[i:])]
+
+    cutoff_percentage = 250 / distance
+    if distance < 500:
+        cutoff_percentage = 0.25
+
+    cutoff_from = line.length * cutoff_percentage
+    cutoff_to = line.length - cutoff_from
+
+    precut = cut(line,cutoff_from)
+    if not precut: return line
+    result = cut(precut[1], cutoff_to)
+    if not result: return line
+    return result[0]
+
 
 db_path = './output/netex.db'
 
@@ -26,7 +69,7 @@ SELECT stopplaces.* from stopplaces
     lines_query = cur.execute(
         f"""
 SELECT pip.pattern, pip.point_order, CASE WHEN stoppoint IS NOT NULL THEN 'stoppoint' WHEN timing_point IS NOT NULL THEN 'timing_point' ELSE NULL END AS "point",
-pip.line_id, pip.line_label, stopplace ,CONCAT(tp_routepoint, ssp_routepoint) as "routepoint_2", routelinks.location FROM (
+pip.line_id, pip.line_label, stopplace ,CONCAT(tp_routepoint, ssp_routepoint) as "routepoint_2", routelinks.location, pip.distance FROM (
 SELECT pip.pattern, pip.point_order, pip.stoppoint, pip.timing_point, lines.id as "line_id", lines.number as "line_label",
 (
 SELECT rel_timing_route_points.routepoint FROM rel_timing_route_points
@@ -47,7 +90,11 @@ SELECT rel_quay_stopplace.stopplace FROM scheduled_stop_points
 LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
 LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
 WHERE scheduled_stop_points.id = pip.stoppoint
-) stopplace
+) stopplace,
+(
+SELECT timing_links.distance FROM timing_links
+WHERE timing_links.id = pip.timing_link
+) distance
 FROM points_in_pattern pip
 LEFT JOIN patterns ON patterns.id = pip.pattern
 LEFT JOIN routes ON routes.id = patterns.route
@@ -85,6 +132,10 @@ ORDER BY pip.pattern AND pip.point_order
         new_link = None
 
         def add_link():
+            if new_link['properties']['distance']:
+                new_link['geometry'] = mapping(cut_piece(shape(new_link), new_link['properties']['distance']))
+                new_link['geometry']['coordinates'] = list(new_link['geometry']['coordinates'])
+
             link_id = (new_link['properties']['from'], new_link['properties']['to'])
             if link_id in links:
                 links[link_id]['properties']['lines'].extend(new_link['properties']['lines'])
@@ -107,7 +158,8 @@ ORDER BY pip.pattern AND pip.point_order
                 "line_label":link[4],
                 "stopplace":link[5],
                 "routepoint_2":link[6],
-                "location":link[7]
+                "location":link[7],
+                "distance":link[8]
             }
 
             if data['location'] is None:
@@ -123,6 +175,8 @@ ORDER BY pip.pattern AND pip.point_order
                 new_link['geometry']['coordinates'].extend(
                     [data['location'][x + x + 1], data['location'][x + x]] for x in range(int(len(data['location']) / 2))
                 )
+                if new_link['properties']['distance'] and data['distance']: 
+                    new_link['properties']['distance'] += data['distance']
                 continue
 
             if new_link is not None:
@@ -138,12 +192,13 @@ ORDER BY pip.pattern AND pip.point_order
                     "from": data['stopplace'],
                     "lines": [
                         {
-                            "color": "000000",
+                            "color": loom_line_color(data['line_id']),
                             "id": data['line_id'],
                             "label": data['line_label']
                         }
                     ],
-                    "to": None
+                    "to": None,
+                    "distance":data['distance']
                 },
                 "type": "Feature"
             }
