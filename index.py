@@ -12,9 +12,15 @@ from plot import plot_layer
 import sys
 import shutil
 from io import StringIO
+from netex_processing.load_options import load_options
 
 input_folder = './input'
+options_input_fodler = './input_options'
 output_folder = './output'
+
+options = None
+if os.path.exists(options_input_fodler):
+    options = load_options(options_input_fodler)
 
 if os.path.exists(output_folder):
     print('Verwijderen output folder...')
@@ -47,7 +53,7 @@ if 'SI' in data_sources:
     print(f'Verwerken van Sloveense NeTEx')
     for link, content in getNetexSI(secrets_file):
         print(f'Verwerken van {link}...')
-        Netex(str_content=content)
+        Netex(str_content=content, options=options)
 
 if 'NL' in data_sources:
     print(f'Verwerken van Nederlandse NeTEx')
@@ -69,7 +75,7 @@ if 'B' in data_sources:
     print(f'Verwerken van Belgische NeTEx')
     for link, content in getNetexB(secrets_file):
         print(f'Verwerken van {link}...')
-        Netex(str_content=content)
+        Netex(str_content=content, options=options)
 
 if 'INPUT' in data_sources:
     print(f'Verwerken van de inputmap')
@@ -87,16 +93,16 @@ if 'INPUT' in data_sources:
                 if os.path.splitext(name)[1] == '.xml':
                     file = netex_zip.open(name, 'r')
                     content = file.read()
-                    netex = Netex(str_content=content)
+                    netex = Netex(str_content=content, options=options)
 
 
         if split_path[1] == '.gz':
             file = gzip.open(path, 'r')
             content = file.read()
-            netex = Netex(str_content=content)
+            netex = Netex(str_content=content, options=options)
         
         if split_path[1] == '.xml':
-            netex = Netex(file=path)
+            netex = Netex(file=path, options=options)
 
 # print('Afbeelding maken...')
 # plot_layer(geopandas.read_file(f'{output_folder}/netex.gpkg', layer='routes'), output_folder=output_folder)

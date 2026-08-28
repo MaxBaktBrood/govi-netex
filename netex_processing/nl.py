@@ -236,16 +236,15 @@ class NetexNL:
             if line_name_el is not None:
                 line_data.name = line_name_el.text
             
-            line_code_el = line.find('./n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
+            line_code_el = line.find('./n:privateCodes/n:PrivateCode[@type="LinePlanningNumber"]', self.ns)
             if line_code_el is None:
-                line_code_el = line.find('./n:PrivateCode', self.ns)
+                line_code_el = line.find('./n:privateCodes/n:PrivateCode', self.ns)
             if line_code_el is not None:
                 line_data.code = line_code_el.text
 
             if line_data.code and 'linecode_categories' in self.options:
                 if str(line_data.code) in self.options['linecode_categories']:
                     line_data.custom_category = self.options['linecode_categories'][str(line_data.code)]
-                else: line_data.custom_category = None
             
             branding_ref_el = line.find('./n:BrandingRef', self.ns)
             if branding_ref_el is not None:
@@ -736,6 +735,7 @@ class NetexNL:
             self.get_run_waittimes(service)
             self.get_timing_links(service)
             self.get_timing_links(service)
+            self.get_rel_stoppoint_quaycode(service)
             self.get_rel_timing_route_points(service)
             self.get_patterns(service)
             self.get_scheduled_stop_points(service)
@@ -814,10 +814,6 @@ class NetexNL:
         self.to_db('authorities', Authority, authorities)
         self.to_db('areas', Area, areas)
         self.to_db('types_of_service', TypeOfService, types_of_service)
-
-        def __init__(self, defaults, options):
-            self.defualts = defaults
-            self.options = options
 
     def __init__(self, defaults, options, ns, transformer=None):
         self.known_ids = {

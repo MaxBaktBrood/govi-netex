@@ -4,6 +4,7 @@ secrets.json
 netex.gpkg
 __pycache__/**
 gld_input/**
+input_options/**
 output/**
 runtime.txt
 netex_json/__pycache__/**
