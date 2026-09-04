@@ -9,7 +9,7 @@ from zipfile import ZipFile
 import gzip
 import os
 
-def getNetexNL(secrets: dict={}, whitelist: list=None):
+def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
     if 'NL_username' not in secrets or 'NL_password' not in secrets:
         return
     
@@ -66,7 +66,7 @@ def getNetexNL(secrets: dict={}, whitelist: list=None):
                 if split_path[1] == '.gz':
                     gzip_file = gzip.open(io, 'r')
                     content = gzip_file.read()
-                    netex = Netex(str_content=content)
+                    netex = Netex(str_content=content, options=options)
         
 
 

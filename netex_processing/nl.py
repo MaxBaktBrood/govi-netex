@@ -4,13 +4,69 @@ from typing import Optional
 from datetime import datetime
 import isodate
 import sqlite3
+import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
 from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Notice
 
 class NetexNL:
 
-    def to_db(self, name, dataclass, data={}):
+    def to_sqlite(self, name, dataclass, data={}):
+        
+        cols = []            
+        for field in fields(dataclass):
+            sql_part = f'{field.name}'
+
+            if field.type == str:
+                sql_part += ' TEXT NOT NULL'
+            elif field.type == int:
+                sql_part += ' INTEGER NOT NULL'
+            elif field.type == float:
+                sql_part += ' REAL NOT NULL'
+            elif field.type == bool:
+                sql_part += ' INTEGER NOT NULL'
+
+            elif field.type == datetime and field.type != Optional[datetime]:
+                sql_part += ' TEXT NOT NULL'
+                for key in data:
+                    setattr(data[key], field.name, getattr(data[key], field.name).isoformat())
+
+            elif field.type == Optional[str]:
+                sql_part += ' TEXT'
+            elif field.type == Optional[int]:
+                sql_part += ' INTEGER'
+            elif field.type == Optional[float]:
+                sql_part += ' REAL'
+            elif field.type == Optional[bool]:
+                sql_part += ' INTEGER'
+
+            elif field.type == Optional[datetime]:
+                sql_part += ' TEXT'
+                for key in data:
+                    if getattr(data[key], field.name) is None: continue
+                    setattr(data[key], field.name, getattr(data[key], field.name).isoformat())
             
+            if field.name == 'id': sql_part += ' PRIMARY KEY'
+
+            cols.append(sql_part)
+
+        self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
+
+        if len(data) == 0: 
+            self.con.commit()
+            return #print(f'{name} heeft geen data')
+
+        self.cur.executemany(f'INSERT OR REPLACE INTO {name} VALUES ({", ".join(['?'] * len(list(cols)))})',
+            list(map(
+                lambda x: astuple(x),
+                list(data.values())
+            ))
+        )
+
+        self.con.commit()
+
+    def to_postgres(self, name, dataclass, data={}):
+            
+            has_id = False
             cols = []            
             for field in fields(dataclass):
                 sql_part = f'{field.name}'
@@ -21,43 +77,63 @@ class NetexNL:
                     sql_part += ' INTEGER NOT NULL'
                 elif field.type == float:
                     sql_part += ' REAL NOT NULL'
+                elif field.type == bool:
+                    sql_part += ' BOOLEAN NOT NULL'
+                elif field.type == datetime:
+                    sql_part += ' TIMESTAMP NOT NULL'
                 elif field.type == Optional[str]:
                     sql_part += ' TEXT'
                 elif field.type == Optional[int]:
                     sql_part += ' INTEGER'
                 elif field.type == Optional[float]:
                     sql_part += ' REAL'
+                elif field.type == Optional[bool]:
+                    sql_part += ' BOOLEAN'
+                elif field.type == Optional[datetime]:
+                    sql_part += ' TIMESTAMP'
                 
-                if field.name == 'id': sql_part += ' PRIMARY KEY'
+                if field.name == 'id': 
+                    has_id = True
+                    sql_part += ' PRIMARY KEY'
 
                 cols.append(sql_part)
 
-            self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)});')
 
             if len(data) == 0: 
                 self.con.commit()
                 return #print(f'{name} heeft geen data')
-
-            self.cur.executemany(f'INSERT OR REPLACE INTO {name} VALUES ({", ".join(['?'] * len(list(cols)))})',
-                list(map(
-                    lambda x: astuple(x),
-                    list(data.values())
-                ))
-            )
+            
+            if has_id:
+                non_id_fields = list(filter(lambda x: x != 'id', map(lambda x: x.name, fields(dataclass))))
+                query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET ({', '.join(non_id_fields)}) = ({', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))});'
+                if len(non_id_fields) == 1:
+                    query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET {', '.join(non_id_fields)} = {', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))};'
+                self.cur.executemany(
+                    query,
+                    list(map(
+                        lambda x: astuple(x),
+                        list(data.values())
+                    ))
+                )
+            else:
+                self.cur.executemany(f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))})',
+                    list(map(
+                        lambda x: astuple(x),
+                        list(data.values())
+                    ))
+                )
 
             self.con.commit()
 
-            # if len(data) == 0: return print(f'{name} heeft geen data')
-            # df = pd.DataFrame.from_records(list(data.values()))
-
-            # if 'id' in df: 
-            #     existing_ids = pd.read_sql(
-            #         'SELECT '
-            #     )
-            # df.to_sql(
-            #     name, self.con, if_exists='append', index=False,
-            #     dtype={'id':'STRING PRIMARY KEY'}
-            # )
+    def to_db(self, name, dataclass, data={}):
+        if not 'db' in self.options: 
+            return self.to_sqlite(name, dataclass, data)
+        match self.options['db']:
+            case 'postgres': self.to_postgres(name, dataclass, data)
+            case 'sqlite': self.to_sqlite(name, dataclass, data)
+            case _: self.to_sqlite(name, dataclass, data)
+        
     
     def db_indexes(self):
         if not self.cur: self.cur = self.con.cursor()
@@ -69,8 +145,8 @@ class NetexNL:
         # self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_stoppoint_quaycode ON rel_stoppoint_quaycode(stoppoint);')
         self.con.commit()
 
-    def date_to_iso(self, text):
-        return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone']).isoformat()
+    def to_datetime(self, text):
+        return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone'])#.isoformat()
     
     def get_brandings(self, resource:ET.Element):
         brandings: dict[str, Branding] = {}
@@ -565,9 +641,9 @@ class NetexNL:
             condition_data = AvailabilityCondition(condition.attrib['id'])
 
             condition_from = condition.find('./n:FromDate', self.ns)
-            if condition_from is not None: condition_data.available_from = self.date_to_iso(condition_from.text)
+            if condition_from is not None: condition_data.available_from = self.to_datetime(condition_from.text)
             condition_through = condition.find('./n:ToDate', self.ns)
-            if condition_through is not None: condition_data.available_through = self.date_to_iso(condition_through.text)
+            if condition_through is not None: condition_data.available_through = self.to_datetime(condition_through.text)
             condition_bits = condition.find('./n:ValidDayBits', self.ns)
             if condition_bits is not None: condition_data.bits = condition_bits.text
 
@@ -819,16 +895,31 @@ class NetexNL:
         self.known_ids = {
             'operators':[]
         }
-        self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
-        self.cur = self.con.cursor()
 
-        self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL)')
+        if 'db' in options and options['db'] == 'postgres':
+            credentials = options['db_credentials']
+            credential_string = ""
+            for key in credentials:
+                credential_string += f"{key}={str(credentials[key])} "
 
-        metadata_query = self.cur.execute("SELECT * FROM _metadata")
-        metadata = metadata_query.fetchall()
+            self.con = psycopg2.connect(credential_string)
+            self.cur = self.con.cursor()
+
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL);')
+
+            metadata_query = self.cur.execute("SELECT * FROM _metadata;")
+            metadata = self.cur.fetchall()
+        else:
+            self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
+            self.cur = self.con.cursor()
+
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL);')
+
+            metadata_query = self.cur.execute("SELECT * FROM _metadata")
+            metadata = metadata_query.fetchall()
 
         if len(metadata) == 0:
-            self.cur.execute(f'INSERT INTO _metadata VALUES ({str(defaults['to_crs'])})')
+            self.cur.execute(f'INSERT INTO _metadata VALUES ({str(defaults['to_crs'])});')
             self.con.commit()
         else:
             crs = metadata[0][0]

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, fields, astuple, asdict
 import typing
 from typing import Optional
+from datetime import datetime
 
 @dataclass
 class Branding:
@@ -136,8 +137,8 @@ class StopArea:
 @dataclass
 class AvailabilityCondition:
     id: str
-    available_from: Optional[str] = None
-    available_through: Optional[str] = None
+    available_from: Optional[datetime] = None
+    available_through: Optional[datetime] = None
     bits: Optional[str] = None
 
 @dataclass

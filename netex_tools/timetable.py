@@ -1,10 +1,23 @@
 import sqlite3
-from os import path
+from os import path 
+import orjson as json
+from netex_db.netex_db import get_pg_con, PostgresQuerying, SQLiteQuerying
 
 def getLines():
-    if not path.exists('./output/netex.db'): return []
-    netex_db = sqlite3.connect('./output/netex.db')
-    cur = netex_db.cursor()
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con()
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        if not path.exists('./output/netex.db'): return []
+        netex_db = sqlite3.connect('./output/netex.db')
+        cur = netex_db.cursor()
+        querying = SQLiteQuerying()
 
     query = """
 SELECT lines.id, lines.code, brandings.name AS "branding", lines.name, number, transport_mode, transport_sub_mode, public_code,
@@ -26,7 +39,7 @@ SELECT lines.id, lines.code, brandings.name AS "branding", lines.name, number, t
             ("id", "code","branding","line_name","line_number","line_mode_of_transport","transport_sub_mode","public_code","authority","authority_code","operator","operator_code","type_of_product","type_of_service","network_name","network_code",),
             x
         )),
-        cur.execute(query).fetchall()
+        querying.query_all(cur, query)
     ))
 
     lines_per_network = {}
@@ -52,16 +65,28 @@ SELECT lines.id, lines.code, brandings.name AS "branding", lines.name, number, t
 
 
     cur.close()
-    netex_db.close()
+    con.close()
 
     return lines_per_network
     # area / parts
     # code / line_name / line_number / mode_of_transport / type
 
 def getLine(line_id = ""):
-    if not path.exists('./output/netex.db'): return {'error':'geen database'}
-    netex_db = sqlite3.connect('./output/netex.db')
-    cur = netex_db.cursor()
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con()
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        if not path.exists('./output/netex.db'): return []
+        netex_db = sqlite3.connect('./output/netex.db')
+        cur = netex_db.cursor()
+        querying = SQLiteQuerying()
+    
     line_query = """
 SELECT lines.code, lines.name AS "line_name", number AS "line_number", brandings.name AS "branding",
 transport_mode AS "line_mode_of_transport", product_types.name as "type_of_product" FROM lines 
@@ -119,7 +144,7 @@ LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AN
 WHERE lines.id = ?;
     """
 
-    line_data = cur.execute(line_query, (line_id,)).fetchone()
+    line_data = querying.query_one(cur, line_query, (line_id,))
     if not line_data: return {'error':f'geen lijn voor {line_id}'}
 
     line = dict(zip(
@@ -130,7 +155,7 @@ WHERE lines.id = ?;
     elif line['branding'] is not None: line['type'] = line['branding']
     line['notes'] = {}
 
-    journey_data = cur.execute(journey_query, (line_id,)).fetchall()
+    journey_data = querying.query_all(cur, journey_query, (line_id,))
     if not journey_data: return {'error':f'geen ritten voor {line_id}'}
 
     journeys = list(map(
@@ -141,7 +166,7 @@ WHERE lines.id = ?;
         journey_data
     ))
 
-    departure_data = cur.execute(departures_query, (line_id,)).fetchall()
+    departure_data = querying.query_all(cur, departures_query, (line_id,))
     if not departure_data: return {'error':f'geen vertrektijden voor {line_id}'}
 
     departure_list = list(map(
@@ -173,7 +198,7 @@ WHERE lines.id = ?;
                 ("id","from","through","bits",),
                 x
             )),
-            cur.execute(availabilities_query, (journey['id'],)).fetchall()
+            querying.query_all(cur, availabilities_query, (journey['id'],))
         ))
 
         entry['availabilities'] = entry['availabilities'] | dict([i['id'], i] for i in availabilities)
