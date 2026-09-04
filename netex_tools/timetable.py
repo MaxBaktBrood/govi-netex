@@ -15,8 +15,8 @@ def getLines():
         querying = PostgresQuerying()
     else:
         if not path.exists('./output/netex.db'): return []
-        netex_db = sqlite3.connect('./output/netex.db')
-        cur = netex_db.cursor()
+        con = sqlite3.connect('./output/netex.db')
+        cur = con.cursor()
         querying = SQLiteQuerying()
 
     query = """
