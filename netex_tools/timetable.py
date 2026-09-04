@@ -1,7 +1,10 @@
 import sqlite3
 from os import path 
 import orjson as json
+import sys
+sys.path.append('/home/maxbaktbrood/Projecten/Netex simpel')
 from netex_db.netex_db import get_pg_con, PostgresQuerying, SQLiteQuerying
+from datetime import datetime, timedelta
 
 def getLines():
     con = None
@@ -257,3 +260,211 @@ WHERE lines.id = ?;
     netex_db.close()
 
     return entry
+
+# Only Postgres support
+def getDepartures(stopplace, timestamp=datetime.now()):
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con()
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return None
+    
+
+    availabilities_query = """
+    SELECT validity_conditions.*, availabilities_per_journey.journey FROM availabilities_per_journey
+    INNER JOIN (
+	SELECT journeys.id AS journey,  stopplace, rel_quay_stopplace.quay FROM rel_quay_stopplace
+	INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+	INNER JOIN points_in_pattern ON points_in_pattern.stoppoint = rel_stoppoint_quaycode.id
+	INNER JOIN patterns ON patterns.id = points_in_pattern.pattern
+	INNER JOIN journeys ON journeys.pattern = patterns.id
+    ) AS locations ON locations.journey = availabilities_per_journey.journey
+    INNER JOIN validity_conditions ON validity_conditions.id = availabilities_per_journey.availability
+    WHERE locations.stopplace = %s AND
+    available_from <= %s AND available_through >= %s;
+    """
+    timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    availabilities = querying.query_all(cur, availabilities_query, (stopplace, timestamp, timestamp))
+
+    journey_ids = []
+
+    for availability in availabilities:
+        period = {
+            'from':availability[1],
+            'through':availability[2],
+            'bits':availability[3]
+        }
+        journey_id = availability[4]
+
+        diff = (timestamp - period['from']).days
+
+        if period['bits'][diff] == '1':
+            journey_ids.append(journey_id)
+
+
+    if len(journey_ids) == 0: 
+        print('Geen ritten')
+        return {}
+
+    journeys_query = """
+    SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
+    journeys.pattern, lines.number AS line_number, lines.name AS "line_name", lines.branding, 
+    lines.transport_mode, lines.transport_sub_mode, lines.public_code, lines.authority, 
+    lines.operator, lines.type_of_product, lines.type_of_service, journeys.starting_time
+    FROM journeys
+    INNER JOIN patterns ON patterns.id = pattern
+    INNER JOIN routes ON routes.id = patterns.route
+    INNER JOIN lines ON lines.id = routes.line
+    WHERE journeys.id IN %s
+    """
+
+    journey_ids = tuple(journey_ids)
+
+    journey_details = querying.query_all(cur, journeys_query, (journey_ids,))
+
+    planned_journeys = {}
+
+    for journey in journey_details:
+        planned_journey = {
+            'Line':journey[0],
+            'LineCode':journey[1],
+            'Direction':journey[2],
+            'DatedVehicleJourney':journey[3],
+            'DatedVehicleJourneyCode':journey[4],
+            'JourneyPattern':journey[5],
+            'PublishedLineName':journey[6],
+            'LineName':journey[7],
+            'Branding':journey[8],
+            'TransportMode':journey[9],
+            'TransportSubMode':journey[10],
+            'LinePublicCode':journey[11],
+            'Authority':journey[12],
+            'Operator':journey[13],
+            'TypeOfProduct':journey[14],
+            'TypeOfService':journey[15],
+            'StartingTime':journey[16],
+            'Calls':{},
+            'Notices':{}
+        }
+
+        planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
+
+    departures_query = """SELECT journeys.id AS "journey", scheduled_stop_points.id AS scheduled_stop_point, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
+    points_in_pattern.timing_point, runtimes.time AS "runtime", 
+    waittimes.time AS "waittime" FROM journeys
+    INNER JOIN patterns ON patterns.id = journeys.pattern
+    INNER JOIN routes ON routes.id = patterns.route
+    INNER JOIN lines ON lines.id = routes.line
+    INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
+    LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
+    LEFT JOIN scheduled_stop_points ON scheduled_stop_points.id = points_in_pattern.stoppoint
+    LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
+    runtimes.timing_link = points_in_pattern.timing_link
+    LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
+    (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
+    WHERE journeys.id IN %s
+    ORDER BY journey, points_in_pattern.point_order;
+    """
+
+    departures = querying.query_all(cur, departures_query, (journey_ids,))
+    departures_per_journey = {}
+    for departure in departures: 
+        departures_per_journey.setdefault(departure[0], []).append(departure)
+
+        # notices_query = """GET notices.* FROM notices
+        # WHERE notice_for IN %s"""
+
+    for journey_id in departures_per_journey:
+        journey = departures_per_journey[journey_id]
+        if not journey_id in planned_journeys: continue
+
+        departure_time_parts = list(map(int, planned_journeys[journey_id]['StartingTime'].split(':')))
+        time_tracker = timestamp.replace(
+            hour=departure_time_parts[0],
+            minute=departure_time_parts[1],
+            second=departure_time_parts[2]
+        )
+
+        calls = []
+
+        for departure in journey:
+            index = departure[3]
+
+            if departure[1] is None:
+                runtime = departure[6]
+                waittime = departure[7]
+                if waittime: time_tracker += timedelta(seconds=waittime)
+                if runtime: time_tracker += timedelta(seconds=runtime)
+                continue
+
+            departure_data = {
+                'StopPoint':departure[1],
+                'Name':departure[2],
+                'Quay':departure[4],
+                'AimedArrivalTime':time_tracker.isoformat(),
+                'AimedDepartureTime':None,
+                'Notices':{}
+            }
+
+            runtime = departure[6]
+            waittime = departure[7]
+
+            if waittime: time_tracker += timedelta(seconds=waittime)
+
+            departure_data['AimedDepartureTime'] = time_tracker.isoformat()
+
+            if runtime: time_tracker += timedelta(seconds=runtime)
+
+            # if len(calls) < index + 1:
+            #     print(f'{journey_id}: {str(index)} {str(len(calls))}')
+            calls.append(departure_data)
+
+        planned_journeys[journey_id]['Calls'] = calls
+
+
+
+    return planned_journeys
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) > 1:
+        d = getDepartures(sys.argv[1])
+        open('./output/departures.json', 'wb').write(json.dumps(d))
+
+
+"""
+SELECT * FROM validity_conditions WHERE available_from <= '2026-09-04T14:41:11.854594' AND available_through >= '2026-09-04T14:41:11.854594';
+SELECT availabilities_per_journey.*, locations.stopplace, locations.quay FROM availabilities_per_journey
+
+INNER JOIN (
+	SELECT journeys.id AS 'journey',  stopplace, rel_quay_stopplace.quay FROM rel_quay_stopplace
+	INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+	INNER JOIN points_in_pattern ON points_in_pattern.stoppoint = rel_stoppoint_quaycode.id
+	INNER JOIN patterns ON patterns.id = points_in_pattern.pattern
+	INNER JOIN journeys ON journeys.pattern = patterns.id
+) AS locations ON locations.journey = availabilities_per_journey.journey
+
+WHERE locations.quay = 'NL:Q:40221200'
+
+
+SELECT validity_conditions.*, locations.* FROM availabilities_per_journey
+
+INNER JOIN (
+	SELECT journeys.id AS journey,  stopplace, rel_quay_stopplace.quay FROM rel_quay_stopplace
+	INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+	INNER JOIN points_in_pattern ON points_in_pattern.stoppoint = rel_stoppoint_quaycode.id
+	INNER JOIN patterns ON patterns.id = points_in_pattern.pattern
+	INNER JOIN journeys ON journeys.pattern = patterns.id
+) AS locations ON locations.journey = availabilities_per_journey.journey
+INNER JOIN validity_conditions ON validity_conditions.id = availabilities_per_journey.availability
+WHERE locations.quay = 'NL:Q:40221200' AND
+available_from <= '2026-09-04T14:41:11.854594' AND available_through >= '2026-09-04T14:41:11.854594';
+"""
