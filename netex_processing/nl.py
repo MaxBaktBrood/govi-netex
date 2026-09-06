@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, DestinationDisplay, Notice
 
 class NetexNL:
 
@@ -357,6 +357,8 @@ class NetexNL:
             type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
             if type_of_service_ref_el is not None:
                 line_data.type_of_service = type_of_service_ref_el.attrib['ref']
+            
+            line_data.datasource = self.defaults['datasource_id']
 
             lines[line_data.id] = line_data
 
@@ -457,6 +459,18 @@ class NetexNL:
         
         self.to_db('routelinks', Routelink, routelinks)
 
+    def get_datasource(self, resource:ET.Element):
+        if self.defaults['datasource_id']:
+            datasource_data = Datasource(
+                self.defaults['datasource_id'],
+                self.defaults['datasource_code'],
+                self.defaults['datasource']
+            )
+            if not datasource_data.code: return
+        
+            self.to_db('datasources', Datasource, {datasource_data.id:datasource_data})
+
+
     def get_run_waittimes(self, service:ET.Element):
         runtimes: dict[str, Runtime] = {} 
         waittimes: dict[str, Waittime]  = {}
@@ -545,6 +559,11 @@ class NetexNL:
             if direction_el is not None:
                 direction = direction_el.text
                 pattern_data.direction = direction
+
+            destination_display_ref = pattern.find('./n:DestinationDisplayRef', self.ns)
+            if destination_display_ref is not None:
+                destination_display = destination_display_ref.attrib['ref']
+                pattern_data.destination_display = destination_display
             
             points = pattern.findall('./n:pointsInSequence/*', self.ns)
             for index, point in enumerate(points):
@@ -560,6 +579,11 @@ class NetexNL:
                 timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
                 if timing_link_ref is not None:
                     point_data.timing_link = timing_link_ref.attrib['ref']
+
+                destination_display_el = point.find('./n:DestinationDisplayRef', self.ns)
+                if destination_display_el is not None:
+                    destination_display = destination_display_el.text
+                    point_data.destination_display = destination_display
                 
                 points_in_pattern[point_data.id] = point_data
             
@@ -755,6 +779,25 @@ class NetexNL:
         ))
         self.to_db('stopplaces', Stopplace, stopplaces)
 
+    def get_destination_displays(self, service:ET.Element):
+        displays: dict[str, DestinationDisplay] = {}
+
+        for display_el in service.findall(f"./n:destinationDisplays/n:DestinationDisplay", self.ns):
+            display_data = DestinationDisplay(display_el.attrib['id'])
+
+            name_el = display_el.find('./n:Name', self.ns)
+            if name_el is not None: display_data.name = name_el.text
+
+            front_el = display_el.find('./n:FrontText', self.ns)
+            if front_el is not None: display_data.front = front_el.text
+
+            side_el = display_el.find('./n:SideText', self.ns)
+            if side_el is not None: display_data.side = side_el.text
+
+            displays[display_data.id] = display_data
+        
+        self.to_db('destination_displays', DestinationDisplay, displays)
+
     def getNotices(self, service:ET.Element, #only_used=True
     ):
         notices = service.find('./n:notices', self.ns)
@@ -784,8 +827,8 @@ class NetexNL:
         self.to_db('notices', Notice, processed_notices)  
 
     def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None):
-
         if resource is not None:
+            self.get_datasource(resource)
             self.get_brandings(resource)
             self.get_product_types(resource)
             self.get_operators(resource)
@@ -816,6 +859,7 @@ class NetexNL:
             self.get_patterns(service)
             self.get_scheduled_stop_points(service)
             self.get_stop_areas(service)
+            self.get_destination_displays(service)
         
         if timetable is not None:
             self.get_validity_conditions(timetable)
@@ -897,12 +941,7 @@ class NetexNL:
         }
 
         if 'db' in options and options['db'] == 'postgres':
-            credentials = options['db_credentials']
-            credential_string = ""
-            for key in credentials:
-                credential_string += f"{key}={str(credentials[key])} "
-
-            self.con = psycopg2.connect(credential_string)
+            self.con = psycopg2.connect(options['db_credentials'])
             self.cur = self.con.cursor()
 
             self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL);')

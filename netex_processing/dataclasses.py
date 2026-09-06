@@ -54,6 +54,7 @@ class Line:
     type_of_service: Optional[str] = None
     responsibility_set: Optional[str] = None
     custom_category: Optional[str] = None
+    datasource_code: Optional[str] = None
 
 @dataclass
 class Route:
@@ -77,6 +78,12 @@ class Routepoint:
 class Routelink:
     id: str
     location: Optional[str] = None
+
+@dataclass
+class Datasource:
+    id: str
+    code: str
+    name: Optional[str] = None
 
 @dataclass
 class Runtime:
@@ -108,6 +115,7 @@ class Pattern:
     id: str
     route: Optional[str] = None
     direction: Optional[str] = None
+    destination_display: Optional[str] = None
 
 @dataclass
 class PointInPattern:
@@ -117,6 +125,7 @@ class PointInPattern:
     timing_point: Optional[str] = None
     stoppoint: Optional[str] = None
     timing_link: Optional[str] = None
+    destination_display: Optional[str] = None
 
 @dataclass
 class ScheduledStopPoint:
@@ -172,6 +181,13 @@ class Stopplace:
     id: str
     name: Optional[str] = None
     location: Optional[str] = None
+
+@dataclass
+class DestinationDisplay:
+    id: str
+    name: Optional[str] = None
+    front: Optional[str] = None
+    side: Optional[str] = None
 
 @dataclass
 class Notice:

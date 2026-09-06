@@ -204,6 +204,7 @@ class NetexEPIP(NetexNL):
             self.get_patterns(service)
             self.get_scheduled_stop_points(service)
             self.get_stop_areas(service)
+            self.get_destination_displays(service)
         
         if timetable is not None:
             self.get_validity_conditions(timetable)
