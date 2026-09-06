@@ -67,6 +67,8 @@ class Netex:
             if defualts is not None:
                 def_datasource_el = defualts.find('./n:DefaultDataSourceRef', self.ns)
                 if def_datasource_el is not None and 'ref' in def_datasource_el.attrib and resource is not None:
+                    self.defaults['datasource_id'] = def_datasource_el.attrib["ref"]
+                    
                     datasource_el = resource.find(f'./n:dataSources/n:DataSource[@id="{def_datasource_el.attrib["ref"]}"]', self.ns)
                     if datasource_el is not None:
                         name_el = datasource_el.find('./n:Name', self.ns)
