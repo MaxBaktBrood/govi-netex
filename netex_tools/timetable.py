@@ -2,16 +2,21 @@ import sqlite3
 from os import path 
 import orjson as json
 import sys
-sys.path.append('/home/maxbaktbrood/Projecten/Netex simpel')
+if __name__ == "__main__":
+    if len(sys.argv) < 1: raise Exception('geef een pad op')
+    sys.path.append(sys.argv[1])
 from netex_db.netex_db import get_pg_con, PostgresQuerying, SQLiteQuerying
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import time
+tz = ZoneInfo(time.tzname)
 
-def getLines():
+def getLines(secrets_file_path=None):
     con = None
     cur = None
     querying = None
 
-    postgres_con = get_pg_con()
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
     if postgres_con is not None: 
         con = postgres_con[0]
         cur = con.cursor()
@@ -74,12 +79,12 @@ SELECT lines.id, lines.code, brandings.name AS "branding", lines.name, number, t
     # area / parts
     # code / line_name / line_number / mode_of_transport / type
 
-def getLine(line_id = ""):
+def getLine(line_id = "", secrets_file_path=None):
     con = None
     cur = None
     querying = None
 
-    postgres_con = get_pg_con()
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
     if postgres_con is not None: 
         con = postgres_con[0]
         cur = con.cursor()
@@ -91,12 +96,12 @@ def getLine(line_id = ""):
         querying = SQLiteQuerying()
     
     line_query = """
-SELECT lines.code, lines.name AS "line_name", number AS "line_number", brandings.name AS "branding",
+SELECT lines.id, lines.code, lines.name AS "line_name", number AS "line_number", brandings.name AS "branding",
 transport_mode AS "line_mode_of_transport", product_types.name as "type_of_product" FROM lines 
 LEFT JOIN brandings ON brandings.id = branding
 LEFT JOIN product_types ON product_types.id = type_of_product
 WHERE
-lines.id = ?;
+lines.id = %s;
     """
     journey_query = """
 SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id AS "line_id", routes.direction, 
@@ -104,14 +109,14 @@ SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id A
     INNER JOIN patterns ON patterns.id = pattern
     INNER JOIN routes ON routes.id = patterns.route
     INNER JOIN lines ON lines.id = routes.line
-    WHERE lines.id = ?
+    WHERE lines.id = %s
 ;
     """
     availabilities_query = """
 SELECT validity_conditions.* FROM validity_conditions 
     INNER JOIN availabilities_per_journey ON availabilities_per_journey.availability = validity_conditions.id
     INNER JOIN journeys ON availabilities_per_journey.journey = journeys.id
-    WHERE journeys.id = ?
+    WHERE journeys.id = %s
     """
 
     departures_query_old = """
@@ -128,12 +133,12 @@ LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
 runtimes.timing_link = points_in_pattern.timing_link
 LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
 waittimes.timing_link = points_in_pattern.timing_link
-WHERE lines.id = ?;
+WHERE lines.id = %s;
     """
     departures_query = """
 SELECT journeys.id AS "journey", journeys.number, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
 points_in_pattern.timing_point,
-runtimes.time AS "runtime", waittimes.time AS "waittime" FROM journeys
+runtimes.time AS "runtime", waittimes.time AS "waittime", scheduled_stop_points.id AS scheduled_stop_point FROM journeys
 INNER JOIN patterns ON patterns.id = journeys.pattern
 INNER JOIN routes ON routes.id = patterns.route
 INNER JOIN lines ON lines.id = routes.line
@@ -144,19 +149,19 @@ LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
 runtimes.timing_link = points_in_pattern.timing_link
 LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
 (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
-WHERE lines.id = ?;
+WHERE lines.id = %s;
     """
 
     line_data = querying.query_one(cur, line_query, (line_id,))
     if not line_data: return {'error':f'geen lijn voor {line_id}'}
 
     line = dict(zip(
-            ("code","line_name","line_number","branding","line_mode_of_transport","type_of_product",),
+            ("id","code","line_name","line_number","branding","line_mode_of_transport","type_of_product",),
             line_data
     ))
     if line['type_of_product'] is not None: line['type'] = line['type_of_product']
     elif line['branding'] is not None: line['type'] = line['branding']
-    line['notes'] = {}
+    line['notes'] = []
 
     journey_data = querying.query_all(cur, journey_query, (line_id,))
     if not journey_data: return {'error':f'geen ritten voor {line_id}'}
@@ -174,11 +179,32 @@ WHERE lines.id = ?;
 
     departure_list = list(map(
         lambda x: dict(zip(
-            ("journey","number","name","order","quay","timing_point","runtime","waittime",),
+            ("journey","number","name","order","quay","timing_point","runtime","waittime","scheduled_stop_point"),
             x
         )),
         departure_data
     ))
+
+    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
+    notice_data = querying.query_all(cur, notices_query, 
+        (tuple(
+            [line['id']] + 
+            list(set(map(lambda x:x['id'], journeys))) +
+            list(set(map(lambda x:x['scheduled_stop_point'], departure_list)))
+        ),)
+    )
+    notices_per_id = {}
+    notices_per_for = {}
+    for notice_record in notice_data:
+        notice = dict(zip(
+            ('id','for','text'), notice_record
+        ))
+        notices_per_id[notice['id']] = notice_record
+        for_list = notices_per_for.setdefault(notice['for'], [])
+        for_list.append(notice['id'])
+
+    if line['id'] in notices_per_for:
+        line['notes'] = notices_per_for[line['id']]
 
     departures = {}
     for departure in departure_list:
@@ -187,12 +213,11 @@ WHERE lines.id = ?;
     entry = {
             "line":line,
             "quays":{},
-            "notes":{},
+            "notes":notices_per_id,
             "availabilities":{},
             "vehicles":{},
             "timetable":{},
             "journeys":{}
-            
         }
 
     for journey in journeys:
@@ -244,30 +269,38 @@ WHERE lines.id = ?;
             if departure['runtime']:
                 time_tracker = time_tracker + departure['runtime']
 
+            if departure['scheduled_stop_point'] in notices_per_for:
+               departure_info['notes'] =  notices_per_for[departure['scheduled_stop_point']]
+
             quay.append(departure_info)
 
         vehicle_index = entry['vehicles'].setdefault('None', # journey['vehicle_type'] ,
             len(entry['vehicles']))
+        
+        notes = []
+        if journey['id'] in notices_per_for:
+            notes = notices_per_for[journey['id']]
 
         entry['journeys'][journey['id']] = {
             'number':journey['number'],
             'starting_time':journey['starting_time'],
             'route':journey['route_id'],
-            'vehicle':vehicle_index
+            'vehicle':vehicle_index,
+            'notes':notes
         }
 
     cur.close()
-    netex_db.close()
+    con.close()
 
     return entry
 
 # Only Postgres support
-def getDepartures(stopplace, timestamp=datetime.now()):
+def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     con = None
     cur = None
     querying = None
 
-    postgres_con = get_pg_con()
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
     if postgres_con is not None: 
         con = postgres_con[0]
         cur = con.cursor()
@@ -289,7 +322,7 @@ def getDepartures(stopplace, timestamp=datetime.now()):
     WHERE locations.stopplace = %s AND
     available_from <= %s AND available_through >= %s;
     """
-    timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
 
     availabilities = querying.query_all(cur, availabilities_query, (stopplace, timestamp, timestamp))
 
@@ -315,12 +348,23 @@ def getDepartures(stopplace, timestamp=datetime.now()):
 
     journeys_query = """
     SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
-    journeys.pattern, lines.number AS line_number, lines.name AS "line_name", lines.branding, 
-    lines.transport_mode, lines.transport_sub_mode, lines.public_code, lines.authority, 
-    lines.operator, lines.type_of_product, lines.type_of_service, journeys.starting_time
+    journeys.pattern, lines.number AS line_number, lines.name AS "line_name", (
+		SELECT name FROM brandings WHERE brandings.id = lines.branding
+	) branding, 
+    lines.transport_mode, lines.transport_sub_mode, lines.public_code, (
+		SELECT name FROM authorities WHERE authorities.id = lines.authority
+	) authority, 
+    (
+		SELECT name FROM operators WHERE operators.id = lines.operator
+	) operator, (
+		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
+	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time
     FROM journeys
-    INNER JOIN patterns ON patterns.id = pattern
-    INNER JOIN routes ON routes.id = patterns.route
+    INNER JOIN (
+		SELECT patterns.id, patterns.route, destination_displays.* FROM patterns
+		LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
+	) AS patterns_and_displays ON patterns_and_displays.id = journeys.pattern
+    INNER JOIN routes ON routes.id = patterns_and_displays.route
     INNER JOIN lines ON lines.id = routes.line
     WHERE journeys.id IN %s
     """
@@ -349,9 +393,13 @@ def getDepartures(stopplace, timestamp=datetime.now()):
             'Operator':journey[13],
             'TypeOfProduct':journey[14],
             'TypeOfService':journey[15],
-            'StartingTime':journey[16],
+            'DestinationDisplay':journey[16],
+            # 'DestinationDisplayOnBus':{
+            #     'Front':journey[17],
+            #     'Side':journey[18]
+            # },
+            'StartingTime':journey[19],
             'Calls':{},
-            'Notices':{}
         }
 
         planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
@@ -389,7 +437,7 @@ def getDepartures(stopplace, timestamp=datetime.now()):
         time_tracker = timestamp.replace(
             hour=departure_time_parts[0],
             minute=departure_time_parts[1],
-            second=departure_time_parts[2]
+            second=departure_time_parts[2],
         )
 
         calls = []
@@ -409,8 +457,7 @@ def getDepartures(stopplace, timestamp=datetime.now()):
                 'Name':departure[2],
                 'Quay':departure[4],
                 'AimedArrivalTime':time_tracker.isoformat(),
-                'AimedDepartureTime':None,
-                'Notices':{}
+                'AimedDepartureTime':None
             }
 
             runtime = departure[6]
@@ -429,14 +476,35 @@ def getDepartures(stopplace, timestamp=datetime.now()):
         planned_journeys[journey_id]['Calls'] = calls
 
 
+    notice_able_ids = set()
+    for journey_id in planned_journeys:
+        notice_able_ids.union((journey_id, planned_journeys[journey_id]['Line']))
+    for departure in departures:
+        notice_able_ids.add(departure[1])
 
-    return planned_journeys
+    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
+    notice_data = querying.query_all(cur, notices_query, (tuple(notice_able_ids),))
+    notices_per_id = {}
+    notices_per_for = {}
+    for notice_record in notice_data:
+        notice = dict(zip(
+            ('id','for','text'), notice_record
+        ))
+        notices_per_id[notice['id']] = notice_record
+        for_list = notices_per_for.setdefault(notice['for'], [])
+        for_list.append(notice['id'])
+    
+    return {
+        'journeys':planned_journeys,
+        'notices':notices_per_id,
+        'notice_assignments':notices_per_for
+    }
 
 
 if __name__ == "__main__":
 
-    if len(sys.argv) > 1:
-        d = getDepartures(sys.argv[1])
+    if len(sys.argv) > 2:
+        d = getDepartures(sys.argv[2])
         open('./output/departures.json', 'wb').write(json.dumps(d))
 
 
