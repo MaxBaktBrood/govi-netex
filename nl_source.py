@@ -8,6 +8,7 @@ from netex import Netex
 from zipfile import ZipFile
 import gzip
 import os
+from datetime import datetime
 
 def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
     if 'NL_username' not in secrets or 'NL_password' not in secrets:
@@ -37,6 +38,8 @@ def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
                     netex_files = sftp.listdir_attr(netex_folder)
                     netex_files.sort(key = lambda f: f.st_mtime, reverse=True)
 
+                    latest_predated_file = None
+
                     for f in netex_files:
                         netex_file = f'{netex_folder}/{f.filename}'
 
@@ -48,11 +51,34 @@ def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
 
                         file_topic = ''
 
-                        for name_part in re.split(r'_|-|\.', f.filename):
+                        if not '_' in f.filename:
+                            continue
+                            # name_parts = re.split(r'_|-|\.', f.filename)
+
+                        name_parts = re.split(r'_|\.', f.filename)
+
+                        # No Netex delivery from the future
+                        if len(name_parts) > 5:
+                            # print(name_parts[4])
+                            if re.fullmatch(r'\d{8}', name_parts[4]):
+                                valid_from = datetime.strptime(name_parts[4], '%Y%m%d')
+                                if valid_from > datetime.now():
+                                    latest_predated_file = (file_topic, netex_file)
+                                    continue
+                            if re.fullmatch(r'\d{4}-\d{2}-\d{2}', name_parts[4]):
+                                valid_from = datetime.strptime(name_parts[4], '%Y-%m-%d')
+                                if valid_from > datetime.now():
+                                    latest_predated_file = (file_topic, netex_file)
+                                    continue
+
+                        for name_part in name_parts:
                             if re.match('[a-zA-Z]', name_part):
                                 file_topic += name_part
 
                         latest_files.setdefault(file_topic, netex_file)
+
+                    if not file_topic in latest_files and latest_predated_file is not None:
+                        latest_files.setdefault(latest_predated_file[0], latest_predated_file[1])
 
 
             for file in latest_files.values():
