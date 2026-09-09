@@ -80,7 +80,7 @@ class NetexNL:
                 elif field.type == bool:
                     sql_part += ' BOOLEAN NOT NULL'
                 elif field.type == datetime:
-                    sql_part += ' TIMESTAMP NOT NULL'
+                    sql_part += ' TIMESTAMP WITH TIME ZONE NOT NULL'
                 elif field.type == Optional[str]:
                     sql_part += ' TEXT'
                 elif field.type == Optional[int]:
@@ -90,7 +90,7 @@ class NetexNL:
                 elif field.type == Optional[bool]:
                     sql_part += ' BOOLEAN'
                 elif field.type == Optional[datetime]:
-                    sql_part += ' TIMESTAMP'
+                    sql_part += ' TIMESTAMP WITH TIME ZONE'
                 
                 if field.name == 'id': 
                     has_id = True
@@ -358,7 +358,7 @@ class NetexNL:
             if type_of_service_ref_el is not None:
                 line_data.type_of_service = type_of_service_ref_el.attrib['ref']
             
-            line_data.datasource = self.defaults['datasource_id']
+            line_data.datasource_code = self.defaults['datasource_id']
 
             lines[line_data.id] = line_data
 
