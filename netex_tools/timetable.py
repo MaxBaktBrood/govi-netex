@@ -9,7 +9,7 @@ from netex_db.netex_db import get_pg_con, PostgresQuerying, SQLiteQuerying
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import time
-tz = ZoneInfo(time.tzname)
+tz = ZoneInfo(time.tzname[0])
 
 def getLines(secrets_file_path=None):
     con = None
@@ -326,6 +326,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
     availabilities = querying.query_all(cur, availabilities_query, (stopplace, timestamp, timestamp))
 
+
     journey_ids = []
 
     for availability in availabilities:
@@ -334,6 +335,10 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
             'through':availability[2],
             'bits':availability[3]
         }
+        if not period['from'] or not period['through']: continue
+        if not period['from'].tzinfo: period['from'] = period['from'].replace(tzinfo=tz)
+        if not period['through'].tzinfo: period['through'] = period['through'].replace(tzinfo=tz)
+
         journey_id = availability[4]
 
         diff = (timestamp - period['from']).days
@@ -358,12 +363,12 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 		SELECT name FROM operators WHERE operators.id = lines.operator
 	) operator, (
 		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
-	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time
+	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource
     FROM journeys
     INNER JOIN (
-		SELECT patterns.id, patterns.route, destination_displays.* FROM patterns
+		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
 		LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
-	) AS patterns_and_displays ON patterns_and_displays.id = journeys.pattern
+	) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
     INNER JOIN routes ON routes.id = patterns_and_displays.route
     INNER JOIN lines ON lines.id = routes.line
     WHERE journeys.id IN %s
@@ -374,6 +379,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     journey_details = querying.query_all(cur, journeys_query, (journey_ids,))
 
     planned_journeys = {}
+    scheduled_stop_points = {}
 
     for journey in journey_details:
         planned_journey = {
@@ -392,13 +398,13 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
             'Authority':journey[12],
             'Operator':journey[13],
             'TypeOfProduct':journey[14],
-            'TypeOfService':journey[15],
-            'DestinationDisplay':journey[16],
+            'DestinationDisplay':journey[15],
             # 'DestinationDisplayOnBus':{
-            #     'Front':journey[17],
-            #     'Side':journey[18]
+            #     'Front':journey[16],
+            #     'Side':journey[17]
             # },
-            'StartingTime':journey[19],
+            'StartingTime':journey[18],
+            'DataSourceCode':journey[19],
             'Calls':{},
         }
 
@@ -406,7 +412,8 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
     departures_query = """SELECT journeys.id AS "journey", scheduled_stop_points.id AS scheduled_stop_point, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
     points_in_pattern.timing_point, runtimes.time AS "runtime", 
-    waittimes.time AS "waittime" FROM journeys
+    waittimes.time AS "waittime", (SELECT stopplace FROM rel_quay_stopplace WHERE rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay) stopplace
+    FROM journeys
     INNER JOIN patterns ON patterns.id = journeys.pattern
     INNER JOIN routes ON routes.id = patterns.route
     INNER JOIN lines ON lines.id = routes.line
@@ -454,18 +461,28 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
             departure_data = {
                 'StopPoint':departure[1],
-                'Name':departure[2],
-                'Quay':departure[4],
-                'AimedArrivalTime':time_tracker.isoformat(),
+                'AimedArrivalTime':None,
                 'AimedDepartureTime':None
             }
+
+            if index != 0:
+                departure_data['AimedArrivalTime'] = time_tracker.isoformat()
+
+
+            if not departure_data['StopPoint'] in scheduled_stop_points:
+                scheduled_stop_points[departure_data['StopPoint']] = {
+                    'Name':departure[2],
+                    'Quay':departure[4],
+                    'StopPlace':departure[8],
+                }
 
             runtime = departure[6]
             waittime = departure[7]
 
             if waittime: time_tracker += timedelta(seconds=waittime)
 
-            departure_data['AimedDepartureTime'] = time_tracker.isoformat()
+            if index + 1 < len(journey):
+                departure_data['AimedDepartureTime'] = time_tracker.isoformat()
 
             if runtime: time_tracker += timedelta(seconds=runtime)
 
@@ -494,7 +511,9 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
         for_list = notices_per_for.setdefault(notice['for'], [])
         for_list.append(notice['id'])
     
+
     return {
+        'scheduled_stop_points':scheduled_stop_points,
         'journeys':planned_journeys,
         'notices':notices_per_id,
         'notice_assignments':notices_per_for
