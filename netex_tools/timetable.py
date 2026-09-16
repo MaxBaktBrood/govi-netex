@@ -410,20 +410,23 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
         planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
 
-    departures_query = """SELECT journeys.id AS "journey", scheduled_stop_points.id AS scheduled_stop_point, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
-    points_in_pattern.timing_point, runtimes.time AS "runtime", 
-    waittimes.time AS "waittime", (SELECT stopplace FROM rel_quay_stopplace WHERE rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay) stopplace
+    departures_query = """SELECT journeys.id AS "journey", stoppoint_information.id AS scheduled_stop_point, stoppoint_information.name, points_in_pattern.point_order AS "order", stoppoint_information.quay,
+    points_in_pattern.timing_point, (SELECT runtimes.time FROM runtimes
+    WHERE runtimes.time_demand_type = journeys.time_demand_type AND
+    runtimes.timing_link = points_in_pattern.timing_link
+    ) AS "runtime", 
+    (SELECT waittimes.time FROM waittimes WHERE
+    waittimes.time_demand_type = journeys.time_demand_type AND
+    (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
+    ) AS "waittime", stoppoint_information.stopplace
     FROM journeys
     INNER JOIN patterns ON patterns.id = journeys.pattern
-    INNER JOIN routes ON routes.id = patterns.route
-    INNER JOIN lines ON lines.id = routes.line
     INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
-    LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
-    LEFT JOIN scheduled_stop_points ON scheduled_stop_points.id = points_in_pattern.stoppoint
-    LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
-    runtimes.timing_link = points_in_pattern.timing_link
-    LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
-    (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
+    LEFT JOIN (
+        SELECT scheduled_stop_points.*, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
+        LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
+        LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
+    ) AS stoppoint_information ON stoppoint_information.id = points_in_pattern.stoppoint
     WHERE journeys.id IN %s
     ORDER BY journey, points_in_pattern.point_order;
     """
