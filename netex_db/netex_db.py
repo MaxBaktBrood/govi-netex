@@ -4,7 +4,9 @@ import psycopg2
 import typing
 import sqlite3
 
-def get_pg_con(secrets=None, secrets_file_path='./secrets.json'):
+def get_pg_con(secrets=None, secrets_file_path=None):
+    if secrets_file_path is None: secrets_file_path = './secrets.json'
+    
     if os.path.exists(secrets_file_path) or secrets is not None:
         if secrets is None:
             secrets = json.loads(
