@@ -410,7 +410,8 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
         planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
 
-    departures_query = """SELECT journeys.id AS "journey", stoppoint_information.id AS scheduled_stop_point, stoppoint_information.name, points_in_pattern.point_order AS "order", stoppoint_information.quay,
+    departures_query = """SELECT journeys.id AS "journey", stoppoint_information.id AS scheduled_stop_point, 
+    points_in_pattern.point_order AS "order", stoppoint_information.quay,
     points_in_pattern.timing_point, (SELECT runtimes.time FROM runtimes
     WHERE runtimes.time_demand_type = journeys.time_demand_type AND
     runtimes.timing_link = points_in_pattern.timing_link
@@ -418,17 +419,20 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     (SELECT waittimes.time FROM waittimes WHERE
     waittimes.time_demand_type = journeys.time_demand_type AND
     (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
-    ) AS "waittime", stoppoint_information.stopplace
+    ) AS "waittime", stoppoint_information.stopplace,
+    stoppoint_information.public_code, stoppoint_information.direction, stoppoint_information.public_name, stoppoint_information.town
     FROM journeys
     INNER JOIN patterns ON patterns.id = journeys.pattern
     INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
     LEFT JOIN (
-        SELECT scheduled_stop_points.*, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
+        SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town FROM scheduled_stop_points
         LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
         LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
+        LEFT JOIN stopplaces ON stopplaces.id = rel_quay_stopplace.stopplace
+        LEFT JOIN quays ON quays.id = rel_quay_stopplace.quay
     ) AS stoppoint_information ON stoppoint_information.id = points_in_pattern.stoppoint
     WHERE journeys.id IN %s
-    ORDER BY journey, points_in_pattern.point_order;
+    ORDER BY journey, points_in_pattern.point_order
     """
 
     departures = querying.query_all(cur, departures_query, (journey_ids,))
@@ -453,11 +457,11 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
         calls = []
 
         for departure in journey:
-            index = departure[3]
+            index = departure[2]
 
             if departure[1] is None:
-                runtime = departure[6]
-                waittime = departure[7]
+                runtime = departure[5]
+                waittime = departure[6]
                 if waittime: time_tracker += timedelta(seconds=waittime)
                 if runtime: time_tracker += timedelta(seconds=runtime)
                 continue
@@ -474,13 +478,16 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
             if not departure_data['StopPoint'] in scheduled_stop_points:
                 scheduled_stop_points[departure_data['StopPoint']] = {
-                    'Name':departure[2],
-                    'Quay':departure[4],
-                    'StopPlace':departure[8],
+                    'Name':departure[10],
+                    'Town':departure[11],
+                    'PublicCode':departure[8],
+                    'Direction': departure[9],
+                    'Quay':departure[3],
+                    'StopPlace':departure[7],
                 }
 
-            runtime = departure[6]
-            waittime = departure[7]
+            runtime = departure[5]
+            waittime = departure[6]
 
             if waittime: time_tracker += timedelta(seconds=waittime)
 
