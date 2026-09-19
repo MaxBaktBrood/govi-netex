@@ -769,6 +769,7 @@ class NetexNL(NetexBase):
     def get_stopplaces(self, site:ET.Element):
         rel_quay_stopplace: list[rel_quay_stopplace] = []
         stopplaces: dict[str, Stopplace] = {}
+        quays: dict[str, Quay] = {}
 
         for stopplace_el in site.findall(f"./n:stopPlaces/n:StopPlace", self.ns):
             code_el = stopplace_el.find('./n:privateCodes/n:PrivateCode[@type="StopPlaceCode"]', self.ns)
@@ -779,6 +780,14 @@ class NetexNL(NetexBase):
                 if quaycode_el is None: continue
 
                 rel_quay_stopplace.append(RelQuayStopplace(code_el.text, quaycode_el.text))
+
+                quay_data = Quay(quaycode_el.text)
+
+                public_code_el = quay_el.find('./n:PublicCode', self.ns)
+                if public_code_el is not None:
+                    quay_data.public_code = public_code_el.text
+                
+                quays[quay_data.id] = quay_data
 
             stopplace_data = Stopplace(code_el.text)
 
@@ -800,6 +809,8 @@ class NetexNL(NetexBase):
             (str(i), x) for i, x in enumerate(rel_quay_stopplace)
         ))
         self.to_db('stopplaces', Stopplace, stopplaces)
+        self.to_db('quays', Quay, quays)
+    
 
     def get_destination_displays(self, service:ET.Element):
         displays: dict[str, DestinationDisplay] = {}

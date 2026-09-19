@@ -181,6 +181,16 @@ class Stopplace:
     id: str
     name: Optional[str] = None
     location: Optional[str] = None
+    placecode: Optional[str] = None
+    public_name: Optional[str] = None
+    town: Optional[str] = None
+    street: Optional[str] = None
+
+@dataclass
+class Quay:
+    id: str
+    public_code: Optional[str] = None
+    direction: Optional[int] = None
 
 @dataclass
 class DestinationDisplay:
