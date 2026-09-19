@@ -5,6 +5,7 @@ import stat
 import re
 from io import BytesIO
 from netex import Netex
+from netex_tools.other_processing.nl_chb import CHB
 from zipfile import ZipFile
 import gzip
 import os
@@ -77,8 +78,8 @@ def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
 
                         latest_files.setdefault(file_topic, netex_file)
 
-                    if not file_topic in latest_files and latest_predated_file is not None:
-                        latest_files.setdefault(latest_predated_file[0], latest_predated_file[1])
+                        if not file_topic in latest_files and latest_predated_file is not None:
+                            latest_files.setdefault(latest_predated_file[0], latest_predated_file[1])
 
 
             for file in latest_files.values():
@@ -93,6 +94,24 @@ def getNetexNL(secrets: dict={}, whitelist: list=None, options=None):
                     gzip_file = gzip.open(io, 'r')
                     content = gzip_file.read()
                     netex = Netex(str_content=content, options=options)
+
+            for name in sftp.listdir('haltes'):
+                if name.startswith('ExportCHB'):
+                    print('Verwerken van het CHB...')
+                    file = f'haltes/{name}'
+                    io = BytesIO()
+                    sftp.getfo(file, io)
+                    io.seek(0)
+
+                    split_path = os.path.splitext(file)
+
+                    if split_path[1] == '.gz':
+                        gzip_file = gzip.open(io, 'r')
+                        content = gzip_file.read()
+                        chb = CHB(options=options)
+                        chb.process_chb(str_content=content)
+
+            
         
 
 

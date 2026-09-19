@@ -6,9 +6,10 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, DestinationDisplay, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, Notice
 
-class NetexNL:
+
+class NetexBase:
 
     def to_sqlite(self, name, dataclass, data={}):
         
@@ -64,7 +65,7 @@ class NetexNL:
 
         self.con.commit()
 
-    def to_postgres(self, name, dataclass, data={}):
+    def to_postgres(self, name, dataclass, data={}, overwriteExisting=True):
             
             has_id = False
             cols = []            
@@ -106,9 +107,14 @@ class NetexNL:
             
             if has_id:
                 non_id_fields = list(filter(lambda x: x != 'id', map(lambda x: x.name, fields(dataclass))))
-                query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET ({', '.join(non_id_fields)}) = ({', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))});'
+
+                confilct_update_part = ', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))
+                if not overwriteExisting:
+                    confilct_update_part = ', '.join(list(map(lambda x: f'coalesce({name}.{x}, EXCLUDED.{x})', non_id_fields)))
+
+                query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET ({', '.join(non_id_fields)}) = ({confilct_update_part});'
                 if len(non_id_fields) == 1:
-                    query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET {', '.join(non_id_fields)} = {', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))};'
+                    query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET {', '.join(non_id_fields)} = {confilct_update_part};'
                 self.cur.executemany(
                     query,
                     list(map(
@@ -116,6 +122,7 @@ class NetexNL:
                         list(data.values())
                     ))
                 )
+
             else:
                 self.cur.executemany(f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))})',
                     list(map(
@@ -126,15 +133,30 @@ class NetexNL:
 
             self.con.commit()
 
-    def to_db(self, name, dataclass, data={}):
+    def to_db(self, name, dataclass, data={}, overwriteExisting=True):
         if not 'db' in self.options: 
             return self.to_sqlite(name, dataclass, data)
         match self.options['db']:
-            case 'postgres': self.to_postgres(name, dataclass, data)
+            case 'postgres': self.to_postgres(name, dataclass, data, overwriteExisting)
             case 'sqlite': self.to_sqlite(name, dataclass, data)
             case _: self.to_sqlite(name, dataclass, data)
-        
     
+    def __init__(self, defaults=None, options={}):
+        self.options = options
+
+        if not defaults:
+            from netex import NetexDefaults
+            defaults = NetexDefaults().defaults
+
+        if 'db' in options and options['db'] == 'postgres':
+            self.con = psycopg2.connect(options['db_credentials'])
+            self.cur = self.con.cursor()
+        else:
+            self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
+            self.cur = self.con.cursor()
+
+class NetexNL(NetexBase):
+ 
     def db_indexes(self):
         if not self.cur: self.cur = self.con.cursor()
         self.cur.execute('CREATE INDEX IF NOT EXISTS runtimes_time_demand ON runtimes(time_demand_type, timing_link);')
@@ -936,6 +958,8 @@ class NetexNL:
         self.to_db('types_of_service', TypeOfService, types_of_service)
 
     def __init__(self, defaults, options, ns, transformer=None):
+        super().__init__(defaults=defaults, options=options)
+
         self.known_ids = {
             'operators':[]
         }
@@ -967,6 +991,5 @@ class NetexNL:
                 raise Exception(f'Coordinates are in a different CRS compared to existing data: {crs} {str(defaults['to_crs'])}')
 
         self.defaults = defaults
-        self.options = options
         self.transformer = transformer
         self.ns = ns

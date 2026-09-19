@@ -5,9 +5,8 @@ from pyproj import Transformer
 from netex_processing.nl import NetexNL
 from netex_processing.epip import NetexEPIP
 
-class Netex:
-
-    def __init__(self, file = None, str_content = None, options={}):
+class NetexDefaults:
+    def __init__(self):
         self.defaults = {
             'datasource':None,
             'datasource_code':None,
@@ -18,6 +17,11 @@ class Netex:
             'frametype':{'general':None, 'specific':None},
             'output_folder':'./output'
         }
+
+class Netex(NetexDefaults):
+
+    def __init__(self, file = None, str_content = None, options={}):
+        super().__init__()
         
         if file is None and str_content is None:
             raise Exception('File or string required')
