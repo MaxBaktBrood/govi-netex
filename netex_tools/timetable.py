@@ -477,14 +477,18 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
 
             if not departure_data['StopPoint'] in scheduled_stop_points:
-                scheduled_stop_points[departure_data['StopPoint']] = {
+                stoppoint_data = {
                     'Name':departure[10],
                     'Town':departure[11],
-                    'PublicCode':departure[8],
-                    'Direction': departure[9],
                     'Quay':departure[3],
                     'StopPlace':departure[7],
                 }
+
+                if departure[8] is not None: stoppoint_data['PublicCode'] = departure[8]
+                if departure[9] is not None: stoppoint_data['Direction'] = departure[9]
+                
+                scheduled_stop_points[departure_data['StopPoint']] = stoppoint_data
+                    
 
             runtime = departure[5]
             waittime = departure[6]
