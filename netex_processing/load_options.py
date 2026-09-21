@@ -10,4 +10,8 @@ def load_options(folder):
         print(f'Inladen ABC-categorieën')
         options['linecode_categories'] = pd.read_excel(f'{folder}/abc-lijnen.xlsx', sheet_name='data').replace(float('nan'), None).set_index('code')["ABC-Category"].to_dict()
 
+    if os.path.exists(f'{folder}/categories.csv'):
+        print(f'Inladen categorieën')
+        options['linecode_categories'] = pd.read_csv(f'{folder}/categories.csv', delimiter=',').replace(float('nan'), None).set_index('code')["ABC-Category"].to_dict()
+
     return options

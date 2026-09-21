@@ -6,13 +6,42 @@ from shapely.wkt import loads
 import shapely
 from shapely.geometry import *
 import random
+import os
 
 loom_line_colors = {}
+def new_random_color():
+    r = lambda: random.randint(0, 255)
+    return '#%02X%02X%02X' % (r(), r(), r())
+
 def loom_line_color(id):
     if id in loom_line_colors: return loom_line_colors[id]
     r = lambda: random.randint(0, 255)
-    loom_line_colors[id] = '#%02X%02X%02X' % (r(), r(), r())
+    loom_line_colors[id] = new_random_color()
     return loom_line_colors[id]
+
+frequency_path = './output/frequencies.json'
+predefined_freqency_colors = './input_options/predefined_frequency_colors.json'
+def frequency_line_colors():
+    if os.path.exists(frequency_path):
+        colors = {}
+
+        if os.path.exists(predefined_freqency_colors):
+            colors_input = json.loads(open(predefined_freqency_colors, 'rb').read())
+            for key in colors_input: 
+                colors[float(key)] = colors_input[key]
+
+        frequencies = json.loads(open(frequency_path, 'rb').read())
+
+        for line in frequencies:
+            if not 'weekdays' in frequencies[line]: continue
+            frequency = frequencies[line]['weekdays']['median']
+            if frequency is None or frequency == 0: continue
+            if not frequency in colors:
+                colors[frequency] = new_random_color()
+
+            loom_line_colors[line] = colors[frequency]
+
+        open('./output/frequency-colors.json', 'wb').write(json.dumps(dict(zip(map(str, colors.keys()), colors.values()))))
 
 def cut_piece(line, distance):
     def cut(line, distance):
@@ -48,7 +77,13 @@ def cut_piece(line, distance):
 
 db_path = './output/netex.db'
 
-def loom(line_ids:list=[]):
+
+def loom(line_ids:list=[], use_frequencies=True):
+
+    if use_frequencies:
+        frequency_line_colors()
+        if line_ids is None or len(line_ids) == 0: line_ids = list(loom_line_colors.keys())
+
     con = sqlite3.connect(db_path)
     
     cur = con.cursor()
@@ -69,8 +104,9 @@ SELECT stopplaces.* from stopplaces
     lines_query = cur.execute(
         f"""
 SELECT pip.pattern, pip.point_order, CASE WHEN stoppoint IS NOT NULL THEN 'stoppoint' WHEN timing_point IS NOT NULL THEN 'timing_point' ELSE NULL END AS "point",
-pip.line_id, pip.line_label, stopplace ,CONCAT(tp_routepoint, ssp_routepoint) as "routepoint_2", routelinks.location, pip.distance FROM (
+pip.line_id, pip.line_label, stopplace ,CONCAT(tp_routepoint, ssp_routepoint) as "routepoint_2", routelinks.location, pip.distance, pip.custom_category FROM (
 SELECT pip.pattern, pip.point_order, pip.stoppoint, pip.timing_point, lines.id as "line_id", lines.number as "line_label",
+lines.custom_category,
 (
 SELECT rel_timing_route_points.routepoint FROM rel_timing_route_points
 LEFT JOIN patterns ON patterns.id = pip.pattern
@@ -159,7 +195,8 @@ ORDER BY pip.pattern AND pip.point_order
                 "stopplace":link[5],
                 "routepoint_2":link[6],
                 "location":link[7],
-                "distance":link[8]
+                "distance":link[8],
+                "custom_category":link[9]
             }
 
             if data['location'] is None:
@@ -183,6 +220,8 @@ ORDER BY pip.pattern AND pip.point_order
                 new_link['properties']['to'] = data['stopplace']
                 add_link()
 
+            color = loom_line_color(data['line_id'])
+
             new_link = {
                 "geometry": {
                     "coordinates": [[data['location'][x + x + 1], data['location'][x + x]] for x in range(int(len(data['location']) / 2))],
@@ -192,7 +231,7 @@ ORDER BY pip.pattern AND pip.point_order
                     "from": data['stopplace'],
                     "lines": [
                         {
-                            "color": loom_line_color(data['line_id']),
+                            "color": color,
                             "id": data['line_id'],
                             "label": data['line_label']
                         }
@@ -225,6 +264,7 @@ ORDER BY pip.pattern AND pip.point_order
         result['features'].append(f)
 
     open('./output/loom.json', 'wb').write(json.dumps(result))
+    open('./output/loom_line_colors.json', 'wb').write(json.dumps(loom_line_colors))
 
 if __name__ == "__main__":
 
