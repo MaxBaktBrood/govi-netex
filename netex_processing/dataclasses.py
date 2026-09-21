@@ -1,6 +1,7 @@
 from dataclasses import dataclass, fields, astuple, asdict
 import typing
 from typing import Optional
+from datetime import datetime
 
 @dataclass
 class Branding:
@@ -53,6 +54,7 @@ class Line:
     type_of_service: Optional[str] = None
     responsibility_set: Optional[str] = None
     custom_category: Optional[str] = None
+    datasource_code: Optional[str] = None
 
 @dataclass
 class Route:
@@ -76,6 +78,12 @@ class Routepoint:
 class Routelink:
     id: str
     location: Optional[str] = None
+
+@dataclass
+class Datasource:
+    id: str
+    code: str
+    name: Optional[str] = None
 
 @dataclass
 class Runtime:
@@ -107,6 +115,7 @@ class Pattern:
     id: str
     route: Optional[str] = None
     direction: Optional[str] = None
+    destination_display: Optional[str] = None
 
 @dataclass
 class PointInPattern:
@@ -116,6 +125,7 @@ class PointInPattern:
     timing_point: Optional[str] = None
     stoppoint: Optional[str] = None
     timing_link: Optional[str] = None
+    destination_display: Optional[str] = None
 
 @dataclass
 class ScheduledStopPoint:
@@ -136,8 +146,8 @@ class StopArea:
 @dataclass
 class AvailabilityCondition:
     id: str
-    available_from: Optional[str] = None
-    available_through: Optional[str] = None
+    available_from: Optional[datetime] = None
+    available_through: Optional[datetime] = None
     bits: Optional[str] = None
 
 @dataclass
@@ -171,6 +181,23 @@ class Stopplace:
     id: str
     name: Optional[str] = None
     location: Optional[str] = None
+    placecode: Optional[str] = None
+    public_name: Optional[str] = None
+    town: Optional[str] = None
+    street: Optional[str] = None
+
+@dataclass
+class Quay:
+    id: str
+    public_code: Optional[str] = None
+    direction: Optional[int] = None
+
+@dataclass
+class DestinationDisplay:
+    id: str
+    name: Optional[str] = None
+    front: Optional[str] = None
+    side: Optional[str] = None
 
 @dataclass
 class Notice:

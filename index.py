@@ -13,12 +13,14 @@ import sys
 import shutil
 from io import StringIO
 from netex_processing.load_options import load_options
+import psycopg2
+from netex_db.netex_db import get_pg_con
 
 input_folder = './input'
 options_input_fodler = './input_options'
 output_folder = './output'
 
-options = None
+options = {}
 if os.path.exists(options_input_fodler):
     options = load_options(options_input_fodler)
 
@@ -35,6 +37,23 @@ if os.path.exists('./secrets.json'):
     secrets_file = json.loads(
         open('secrets.json', 'r').read()
     )
+
+
+postgres_con = get_pg_con(secrets_file)
+
+if postgres_con is not None:
+    print('Verwijderen Postgres tabellen...')
+
+    options['db'] = 'postgres'
+    options['db_credentials'] = postgres_con[1]
+
+    con = postgres_con[0]
+    cur = con.cursor()
+    cur.execute(f'SELECT tablename FROM pg_tables WHERE schemaname = current_schema();')
+    for row in cur.fetchall():
+        cur.execute(f'DROP TABLE {row[0]};')
+    con.commit()
+    con.close()
 
 data_sources = [
     "SI", "NL", "N", "FIN", "S", "INPUT"
@@ -57,7 +76,7 @@ if 'SI' in data_sources:
 
 if 'NL' in data_sources:
     print(f'Verwerken van Nederlandse NeTEx')
-    getNetexNL(secrets=secrets_file, whitelist=whitelist)
+    getNetexNL(secrets=secrets_file, whitelist=whitelist , options=options)
 
 if 'N' in data_sources:
     print(f'Verwerken van Noorse NeTEx')

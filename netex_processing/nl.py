@@ -4,13 +4,70 @@ from typing import Optional
 from datetime import datetime
 import isodate
 import sqlite3
+import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, Notice
 
-class NetexNL:
 
-    def to_db(self, name, dataclass, data={}):
+class NetexBase:
+
+    def to_sqlite(self, name, dataclass, data={}):
+        
+        cols = []            
+        for field in fields(dataclass):
+            sql_part = f'{field.name}'
+
+            if field.type == str:
+                sql_part += ' TEXT NOT NULL'
+            elif field.type == int:
+                sql_part += ' INTEGER NOT NULL'
+            elif field.type == float:
+                sql_part += ' REAL NOT NULL'
+            elif field.type == bool:
+                sql_part += ' INTEGER NOT NULL'
+
+            elif field.type == datetime and field.type != Optional[datetime]:
+                sql_part += ' TEXT NOT NULL'
+                for key in data:
+                    setattr(data[key], field.name, getattr(data[key], field.name).isoformat())
+
+            elif field.type == Optional[str]:
+                sql_part += ' TEXT'
+            elif field.type == Optional[int]:
+                sql_part += ' INTEGER'
+            elif field.type == Optional[float]:
+                sql_part += ' REAL'
+            elif field.type == Optional[bool]:
+                sql_part += ' INTEGER'
+
+            elif field.type == Optional[datetime]:
+                sql_part += ' TEXT'
+                for key in data:
+                    if getattr(data[key], field.name) is None: continue
+                    setattr(data[key], field.name, getattr(data[key], field.name).isoformat())
             
+            if field.name == 'id': sql_part += ' PRIMARY KEY'
+
+            cols.append(sql_part)
+
+        self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
+
+        if len(data) == 0: 
+            self.con.commit()
+            return #print(f'{name} heeft geen data')
+
+        self.cur.executemany(f'INSERT OR REPLACE INTO {name} VALUES ({", ".join(['?'] * len(list(cols)))})',
+            list(map(
+                lambda x: astuple(x),
+                list(data.values())
+            ))
+        )
+
+        self.con.commit()
+
+    def to_postgres(self, name, dataclass, data={}, overwriteExisting=True):
+            
+            has_id = False
             cols = []            
             for field in fields(dataclass):
                 sql_part = f'{field.name}'
@@ -21,44 +78,85 @@ class NetexNL:
                     sql_part += ' INTEGER NOT NULL'
                 elif field.type == float:
                     sql_part += ' REAL NOT NULL'
+                elif field.type == bool:
+                    sql_part += ' BOOLEAN NOT NULL'
+                elif field.type == datetime:
+                    sql_part += ' TIMESTAMP WITH TIME ZONE NOT NULL'
                 elif field.type == Optional[str]:
                     sql_part += ' TEXT'
                 elif field.type == Optional[int]:
                     sql_part += ' INTEGER'
                 elif field.type == Optional[float]:
                     sql_part += ' REAL'
+                elif field.type == Optional[bool]:
+                    sql_part += ' BOOLEAN'
+                elif field.type == Optional[datetime]:
+                    sql_part += ' TIMESTAMP WITH TIME ZONE'
                 
-                if field.name == 'id': sql_part += ' PRIMARY KEY'
+                if field.name == 'id': 
+                    has_id = True
+                    sql_part += ' PRIMARY KEY'
 
                 cols.append(sql_part)
 
-            self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)})')
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS {name} ({", ".join(cols)});')
 
             if len(data) == 0: 
                 self.con.commit()
                 return #print(f'{name} heeft geen data')
+            
+            if has_id:
+                non_id_fields = list(filter(lambda x: x != 'id', map(lambda x: x.name, fields(dataclass))))
 
-            self.cur.executemany(f'INSERT OR REPLACE INTO {name} VALUES ({", ".join(['?'] * len(list(cols)))})',
-                list(map(
-                    lambda x: astuple(x),
-                    list(data.values())
-                ))
-            )
+                confilct_update_part = ', '.join(list(map(lambda x: f'EXCLUDED.{x}', non_id_fields)))
+                if not overwriteExisting:
+                    confilct_update_part = ', '.join(list(map(lambda x: f'coalesce({name}.{x}, EXCLUDED.{x})', non_id_fields)))
+
+                query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET ({', '.join(non_id_fields)}) = ({confilct_update_part});'
+                if len(non_id_fields) == 1:
+                    query = f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))}) ON CONFLICT (id) DO UPDATE SET {', '.join(non_id_fields)} = {confilct_update_part};'
+                self.cur.executemany(
+                    query,
+                    list(map(
+                        lambda x: astuple(x),
+                        list(data.values())
+                    ))
+                )
+
+            else:
+                self.cur.executemany(f'INSERT INTO {name} VALUES ({", ".join(['%s'] * len(list(cols)))})',
+                    list(map(
+                        lambda x: astuple(x),
+                        list(data.values())
+                    ))
+                )
 
             self.con.commit()
 
-            # if len(data) == 0: return print(f'{name} heeft geen data')
-            # df = pd.DataFrame.from_records(list(data.values()))
-
-            # if 'id' in df: 
-            #     existing_ids = pd.read_sql(
-            #         'SELECT '
-            #     )
-            # df.to_sql(
-            #     name, self.con, if_exists='append', index=False,
-            #     dtype={'id':'STRING PRIMARY KEY'}
-            # )
+    def to_db(self, name, dataclass, data={}, overwriteExisting=True):
+        if not 'db' in self.options: 
+            return self.to_sqlite(name, dataclass, data)
+        match self.options['db']:
+            case 'postgres': self.to_postgres(name, dataclass, data, overwriteExisting)
+            case 'sqlite': self.to_sqlite(name, dataclass, data)
+            case _: self.to_sqlite(name, dataclass, data)
     
+    def __init__(self, defaults=None, options={}):
+        self.options = options
+
+        if not defaults:
+            from netex import NetexDefaults
+            defaults = NetexDefaults().defaults
+
+        if 'db' in options and options['db'] == 'postgres':
+            self.con = psycopg2.connect(options['db_credentials'])
+            self.cur = self.con.cursor()
+        else:
+            self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
+            self.cur = self.con.cursor()
+
+class NetexNL(NetexBase):
+ 
     def db_indexes(self):
         if not self.cur: self.cur = self.con.cursor()
         self.cur.execute('CREATE INDEX IF NOT EXISTS runtimes_time_demand ON runtimes(time_demand_type, timing_link);')
@@ -69,8 +167,8 @@ class NetexNL:
         # self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_stoppoint_quaycode ON rel_stoppoint_quaycode(stoppoint);')
         self.con.commit()
 
-    def date_to_iso(self, text):
-        return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone']).isoformat()
+    def to_datetime(self, text):
+        return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone'])#.isoformat()
     
     def get_brandings(self, resource:ET.Element):
         brandings: dict[str, Branding] = {}
@@ -281,6 +379,8 @@ class NetexNL:
             type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
             if type_of_service_ref_el is not None:
                 line_data.type_of_service = type_of_service_ref_el.attrib['ref']
+            
+            line_data.datasource_code = self.defaults['datasource_id']
 
             lines[line_data.id] = line_data
 
@@ -381,6 +481,18 @@ class NetexNL:
         
         self.to_db('routelinks', Routelink, routelinks)
 
+    def get_datasource(self, resource:ET.Element):
+        if self.defaults['datasource_id']:
+            datasource_data = Datasource(
+                self.defaults['datasource_id'],
+                self.defaults['datasource_code'],
+                self.defaults['datasource']
+            )
+            if not datasource_data.code: return
+        
+            self.to_db('datasources', Datasource, {datasource_data.id:datasource_data})
+
+
     def get_run_waittimes(self, service:ET.Element):
         runtimes: dict[str, Runtime] = {} 
         waittimes: dict[str, Waittime]  = {}
@@ -469,6 +581,11 @@ class NetexNL:
             if direction_el is not None:
                 direction = direction_el.text
                 pattern_data.direction = direction
+
+            destination_display_ref = pattern.find('./n:DestinationDisplayRef', self.ns)
+            if destination_display_ref is not None:
+                destination_display = destination_display_ref.attrib['ref']
+                pattern_data.destination_display = destination_display
             
             points = pattern.findall('./n:pointsInSequence/*', self.ns)
             for index, point in enumerate(points):
@@ -484,6 +601,11 @@ class NetexNL:
                 timing_link_ref = point.find('./n:OnwardTimingLinkRef', self.ns)
                 if timing_link_ref is not None:
                     point_data.timing_link = timing_link_ref.attrib['ref']
+
+                destination_display_el = point.find('./n:DestinationDisplayRef', self.ns)
+                if destination_display_el is not None:
+                    destination_display = destination_display_el.text
+                    point_data.destination_display = destination_display
                 
                 points_in_pattern[point_data.id] = point_data
             
@@ -565,9 +687,9 @@ class NetexNL:
             condition_data = AvailabilityCondition(condition.attrib['id'])
 
             condition_from = condition.find('./n:FromDate', self.ns)
-            if condition_from is not None: condition_data.available_from = self.date_to_iso(condition_from.text)
+            if condition_from is not None: condition_data.available_from = self.to_datetime(condition_from.text)
             condition_through = condition.find('./n:ToDate', self.ns)
-            if condition_through is not None: condition_data.available_through = self.date_to_iso(condition_through.text)
+            if condition_through is not None: condition_data.available_through = self.to_datetime(condition_through.text)
             condition_bits = condition.find('./n:ValidDayBits', self.ns)
             if condition_bits is not None: condition_data.bits = condition_bits.text
 
@@ -647,6 +769,7 @@ class NetexNL:
     def get_stopplaces(self, site:ET.Element):
         rel_quay_stopplace: list[rel_quay_stopplace] = []
         stopplaces: dict[str, Stopplace] = {}
+        quays: dict[str, Quay] = {}
 
         for stopplace_el in site.findall(f"./n:stopPlaces/n:StopPlace", self.ns):
             code_el = stopplace_el.find('./n:privateCodes/n:PrivateCode[@type="StopPlaceCode"]', self.ns)
@@ -657,6 +780,14 @@ class NetexNL:
                 if quaycode_el is None: continue
 
                 rel_quay_stopplace.append(RelQuayStopplace(code_el.text, quaycode_el.text))
+
+                quay_data = Quay(quaycode_el.text)
+
+                public_code_el = quay_el.find('./n:PublicCode', self.ns)
+                if public_code_el is not None:
+                    quay_data.public_code = public_code_el.text
+                
+                quays[quay_data.id] = quay_data
 
             stopplace_data = Stopplace(code_el.text)
 
@@ -678,6 +809,27 @@ class NetexNL:
             (str(i), x) for i, x in enumerate(rel_quay_stopplace)
         ))
         self.to_db('stopplaces', Stopplace, stopplaces)
+        self.to_db('quays', Quay, quays)
+    
+
+    def get_destination_displays(self, service:ET.Element):
+        displays: dict[str, DestinationDisplay] = {}
+
+        for display_el in service.findall(f"./n:destinationDisplays/n:DestinationDisplay", self.ns):
+            display_data = DestinationDisplay(display_el.attrib['id'])
+
+            name_el = display_el.find('./n:Name', self.ns)
+            if name_el is not None: display_data.name = name_el.text
+
+            front_el = display_el.find('./n:FrontText', self.ns)
+            if front_el is not None: display_data.front = front_el.text
+
+            side_el = display_el.find('./n:SideText', self.ns)
+            if side_el is not None: display_data.side = side_el.text
+
+            displays[display_data.id] = display_data
+        
+        self.to_db('destination_displays', DestinationDisplay, displays)
 
     def getNotices(self, service:ET.Element, #only_used=True
     ):
@@ -708,8 +860,8 @@ class NetexNL:
         self.to_db('notices', Notice, processed_notices)  
 
     def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None):
-
         if resource is not None:
+            self.get_datasource(resource)
             self.get_brandings(resource)
             self.get_product_types(resource)
             self.get_operators(resource)
@@ -740,6 +892,7 @@ class NetexNL:
             self.get_patterns(service)
             self.get_scheduled_stop_points(service)
             self.get_stop_areas(service)
+            self.get_destination_displays(service)
         
         if timetable is not None:
             self.get_validity_conditions(timetable)
@@ -816,19 +969,31 @@ class NetexNL:
         self.to_db('types_of_service', TypeOfService, types_of_service)
 
     def __init__(self, defaults, options, ns, transformer=None):
+        super().__init__(defaults=defaults, options=options)
+
         self.known_ids = {
             'operators':[]
         }
-        self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
-        self.cur = self.con.cursor()
 
-        self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL)')
+        if 'db' in options and options['db'] == 'postgres':
+            self.con = psycopg2.connect(options['db_credentials'])
+            self.cur = self.con.cursor()
 
-        metadata_query = self.cur.execute("SELECT * FROM _metadata")
-        metadata = metadata_query.fetchall()
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL);')
+
+            metadata_query = self.cur.execute("SELECT * FROM _metadata;")
+            metadata = self.cur.fetchall()
+        else:
+            self.con = sqlite3.connect(f'{defaults['output_folder']}/netex.db')
+            self.cur = self.con.cursor()
+
+            self.cur.execute(f'CREATE TABLE IF NOT EXISTS _metadata (crs TEXT NOT NULL);')
+
+            metadata_query = self.cur.execute("SELECT * FROM _metadata")
+            metadata = metadata_query.fetchall()
 
         if len(metadata) == 0:
-            self.cur.execute(f'INSERT INTO _metadata VALUES ({str(defaults['to_crs'])})')
+            self.cur.execute(f'INSERT INTO _metadata VALUES ({str(defaults['to_crs'])});')
             self.con.commit()
         else:
             crs = metadata[0][0]
@@ -837,6 +1002,5 @@ class NetexNL:
                 raise Exception(f'Coordinates are in a different CRS compared to existing data: {crs} {str(defaults['to_crs'])}')
 
         self.defaults = defaults
-        self.options = options
         self.transformer = transformer
         self.ns = ns

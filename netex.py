@@ -5,9 +5,8 @@ from pyproj import Transformer
 from netex_processing.nl import NetexNL
 from netex_processing.epip import NetexEPIP
 
-class Netex:
-
-    def __init__(self, file = None, str_content = None, options={}):
+class NetexDefaults:
+    def __init__(self):
         self.defaults = {
             'datasource':None,
             'datasource_code':None,
@@ -18,6 +17,11 @@ class Netex:
             'frametype':{'general':None, 'specific':None},
             'output_folder':'./output'
         }
+
+class Netex(NetexDefaults):
+
+    def __init__(self, file = None, str_content = None, options={}):
+        super().__init__()
         
         if file is None and str_content is None:
             raise Exception('File or string required')
@@ -67,6 +71,8 @@ class Netex:
             if defualts is not None:
                 def_datasource_el = defualts.find('./n:DefaultDataSourceRef', self.ns)
                 if def_datasource_el is not None and 'ref' in def_datasource_el.attrib and resource is not None:
+                    self.defaults['datasource_id'] = def_datasource_el.attrib["ref"]
+                    
                     datasource_el = resource.find(f'./n:dataSources/n:DataSource[@id="{def_datasource_el.attrib["ref"]}"]', self.ns)
                     if datasource_el is not None:
                         name_el = datasource_el.find('./n:Name', self.ns)
