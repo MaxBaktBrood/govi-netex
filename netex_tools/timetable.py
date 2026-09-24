@@ -143,13 +143,13 @@ INNER JOIN patterns ON patterns.id = journeys.pattern
 INNER JOIN routes ON routes.id = patterns.route
 INNER JOIN lines ON lines.id = routes.line
 INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
-INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
-INNER JOIN scheduled_stop_points ON scheduled_stop_points.id = points_in_pattern.stoppoint
+LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
+LEFT JOIN scheduled_stop_points ON scheduled_stop_points.id = points_in_pattern.stoppoint
 LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
 runtimes.timing_link = points_in_pattern.timing_link
 LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
 (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
-WHERE lines.id = %s;
+WHERE lines.id = %s ORDER BY journey, point_order;
     """
 
     line_data = querying.query_one(cur, line_query, (line_id,))
@@ -199,7 +199,7 @@ WHERE lines.id = %s;
         notice = dict(zip(
             ('id','for','text'), notice_record
         ))
-        notices_per_id[notice['id']] = notice_record
+        notices_per_id[notice['id']] = notice['text']
         for_list = notices_per_for.setdefault(notice['for'], [])
         for_list.append(notice['id'])
 
@@ -349,7 +349,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
     if len(journey_ids) == 0: 
         print('Geen ritten')
-        return {}
+        return None
 
     journeys_query = """
     SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
@@ -509,7 +509,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
     notice_able_ids = set()
     for journey_id in planned_journeys:
-        notice_able_ids.union((journey_id, planned_journeys[journey_id]['Line']))
+        notice_able_ids = notice_able_ids.union((journey_id, planned_journeys[journey_id]['Line']))
     for departure in departures:
         notice_able_ids.add(departure[1])
 
@@ -534,11 +534,161 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     }
 
 
+def getStopplaces(secrets_file_path=None):
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return None
+    
+    stopplace_query = "SELECT * FROM stopplaces"
+    stopplaces = list(map(
+        lambda x: dict(zip(
+            ("id", "name","location","placecode","public_name","town","street",),
+            x
+        )),
+        querying.query_all(cur, stopplace_query)
+    ))
+
+    quay_query = """SELECT scheduled_stop_points.id, scheduled_stop_points.name, stop_areas.public_code, stop_areas.private_code, stop_areas.name AS stop_area_name, stop_areas.place_name, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
+    INNER JOIN stop_areas ON stop_areas.id = scheduled_stop_points.stop_area
+    INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
+    INNER JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay;
+    """
+    quays = list(map(
+        lambda x: dict(zip(
+            ("id", "name","public_code","private_code","stop_area_name","place_name","quay","stopplace",),
+            x
+        )),
+        querying.query_all(cur, quay_query)
+    ))
+    stop_points_per_stopplace = {}
+    for stop_point in quays:
+        stop_points_per_stopplace.setdefault(stop_point['stopplace'], []).append(stop_point)
+
+    
+    summarized_stopplaces = []
+    for stopplace in stopplaces:
+        summarized = {
+            'id':stopplace['id'],
+            'name':stopplace['public_name'],
+            'town':stopplace['town'],
+            'location':None,
+            'tags':[],
+            'quays':set(),
+            'stop_points':[]
+        }
+
+        if not summarized['name']:
+            summarized['name'] = stopplace['name']
+
+        if stopplace['location']:
+            summarized['location'] = list(map(float, stopplace['location'].split(" ")))
+
+        def get_tag(name, colour="#2a2a6a", category=None): return {"name":name, "colour":colour, "category":category}
+            
+        used_tags = [stopplace['name'], summarized['name'], summarized['town']]
+
+        if stopplace['street'] and not stopplace['street'] in used_tags:
+            summarized['tags'].append(get_tag(
+                stopplace['street'], "#404080", "street"
+            ))
+            used_tags.append(stopplace['street'])
+
+        if stopplace['id'] in stop_points_per_stopplace:
+            for stop_point in stop_points_per_stopplace[stopplace['id']]:
+                summarized['stop_points'].append(stop_point['id'])
+                summarized['quays'].add(stop_point['quay'])
+
+                if stop_point['name'] and not stop_point['name'] in used_tags:
+                    summarized['tags'].append(get_tag(
+                        stop_point['name'], "#4a2a6b", "name"
+                    ))
+                    used_tags.append(stop_point['name'])
+
+                if stop_point['stop_area_name'] and not stop_point['stop_area_name'] in used_tags:
+                    summarized['tags'].append(get_tag(
+                        stop_point['stop_area_name'], "#2a4a6b", "stop_area_name"
+                    ))
+                    used_tags.append(stop_point['stop_area_name'])
+                
+                if stop_point['public_code'] and not stop_point['public_code'] in used_tags:
+                    summarized['tags'].append(get_tag(
+                        stop_point['public_code'], "#6b296b", "public_code"
+                    ))
+                    used_tags.append(stop_point['public_code'])
+                
+                if stop_point['private_code'] and not stop_point['private_code'] in used_tags:
+                    summarized['tags'].append(get_tag(
+                        stop_point['private_code'], "#6b294a", "private_code"
+                    ))
+                    used_tags.append(stop_point['private_code'])
+                
+                if stop_point['place_name'] and not stop_point['place_name'] in used_tags:
+                    summarized['tags'].append(get_tag(
+                        stop_point['place_name'], "#3f5f7f", "place_name"
+                    ))
+                    used_tags.append(stop_point['place_name'])
+            
+        summarized['quays'] = list(summarized['quays'])
+        summarized_stopplaces.append(summarized)
+
+    return summarized_stopplaces
+            
+def getStoppointsPerStopplace(stopplace, secrets_file_path=None):
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return None
+    
+
+    quay_query = """SELECT scheduled_stop_points.id, scheduled_stop_points.name, stop_areas.public_code, stop_areas.private_code, stop_areas.name AS stop_area_name, stop_areas.place_name, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
+    INNER JOIN stop_areas ON stop_areas.id = scheduled_stop_points.stop_area
+    INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
+    INNER JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
+    WHERE rel_quay_stopplace.stopplace = %s;
+    """
+    quays = list(map(
+        lambda x: dict(zip(
+            ("id", "name","public_code","private_code","stop_area_name","place_name","quay","stopplace",),
+            x
+        )),
+        querying.query_all(cur, quay_query, (stopplace,))
+    ))
+
+    stoppoins_per_id = {}
+    for quay in quays:
+        stoppoins_per_id[quay['id']] = {
+            'Name':quay['name'],
+            'Quay':quay['quay'],
+            'StopPlace':quay['stopplace']
+        }
+    
+    return stoppoins_per_id
+
+
+
+
+
 if __name__ == "__main__":
 
     if len(sys.argv) > 2:
         d = getDepartures(sys.argv[2])
         open('./output/departures.json', 'wb').write(json.dumps(d))
+
 
 
 """
