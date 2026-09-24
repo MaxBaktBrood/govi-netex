@@ -92,8 +92,7 @@ class CHB(NetexBase):
                     quay_data.public_code = part_el.text
 
                 quays[quay_data.id] = quay_data
-        print(len(stopplaces))
-        print(len(quays))
+
         self.to_db('stopplaces', Stopplace, stopplaces, overwriteExisting=False)
         self.to_db('quays', Quay, quays, overwriteExisting=False)
 

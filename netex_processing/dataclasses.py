@@ -126,6 +126,8 @@ class PointInPattern:
     stoppoint: Optional[str] = None
     timing_link: Optional[str] = None
     destination_display: Optional[str] = None
+    for_boarding: Optional[bool] = None
+    for_alighting: Optional[bool] = None
 
 @dataclass
 class ScheduledStopPoint:

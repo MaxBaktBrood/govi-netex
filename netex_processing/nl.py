@@ -606,6 +606,16 @@ class NetexNL(NetexBase):
                 if destination_display_el is not None:
                     destination_display = destination_display_el.text
                     point_data.destination_display = destination_display
+
+                boarding_el = point.find('./n:ForBoarding', self.ns)
+                if boarding_el is not None:
+                    boarding = (boarding_el.text == 'true')
+                    point_data.for_boarding = boarding
+
+                alighting_el = point.find('./n:ForAlighting', self.ns)
+                if alighting_el is not None:
+                    alighting = (alighting_el.text == 'true')
+                    point_data.for_alighting = alighting
                 
                 points_in_pattern[point_data.id] = point_data
             
