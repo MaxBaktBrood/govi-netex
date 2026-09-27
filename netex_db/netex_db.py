@@ -28,19 +28,21 @@ def get_pg_con(secrets=None, secrets_file_path=None):
     else: return None
 
 class SQLiteQuerying:
-    def query_all(self, cur: sqlite3.Cursor, q, params=()):
+    def query_all(self, cur: sqlite3.Cursor, q, params=(), debug=False):
         return cur.execute(q.replace('%s', '?'), params).fetchall()
-    def query_one(self, cur: sqlite3.Cursor, q, params=()):
+    def query_one(self, cur: sqlite3.Cursor, q, params=(), debug=False):
         return cur.execute(q.replace('%s', '?'), params).fetchone()
     
     def __init__(self):
         pass
 
 class PostgresQuerying:
-    def query_all(self, cur, q, params=()):
+    def query_all(self, cur, q, params=(), debug=False):
+        if debug: print(cur.mogrify(q, params))
         cur.execute(q, params)
         return cur.fetchall()
-    def query_one(self, cur, q, params=()):
+    def query_one(self, cur, q, params=(), debug=False):
+        if debug: print(cur.mogrify(q, params))
         cur.execute(q, params)
         return cur.fetchone()
 
