@@ -105,7 +105,7 @@ lines.id = %s;
     """
     journey_query = """
 SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id AS "line_id", routes.direction, 
-    lines.name AS "line_name", lines.number AS "line_number", realtime_info, starting_time, time_demand_type  FROM journeys
+    lines.name AS "line_name", lines.number AS "line_number", COALESCE(journeys.monitored, lines.monitored) AS monitored, starting_time, time_demand_type  FROM journeys
     INNER JOIN patterns ON patterns.id = pattern
     INNER JOIN routes ON routes.id = patterns.route
     INNER JOIN lines ON lines.id = routes.line
@@ -138,7 +138,9 @@ WHERE lines.id = %s;
     departures_query = """
 SELECT journeys.id AS "journey", journeys.number, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
 points_in_pattern.timing_point,
-runtimes.time AS "runtime", waittimes.time AS "waittime", scheduled_stop_points.id AS scheduled_stop_point FROM journeys
+runtimes.time AS "runtime", waittimes.time AS "waittime", scheduled_stop_points.id AS scheduled_stop_point,
+COALESCE(points_in_pattern.for_boarding, scheduled_stop_points.for_boarding) for_boarding,
+COALESCE(points_in_pattern.for_alighting, scheduled_stop_points.for_alighting) for_alighting FROM journeys
 INNER JOIN patterns ON patterns.id = journeys.pattern
 INNER JOIN routes ON routes.id = patterns.route
 INNER JOIN lines ON lines.id = routes.line
@@ -168,7 +170,7 @@ WHERE lines.id = %s ORDER BY journey, point_order;
 
     journeys = list(map(
         lambda x: dict(zip(
-            ("id","number","pattern","route_id","line_id","direction","line_name","line_number","realtime_info","starting_time","time_demand_type",),
+            ("id","number","pattern","route_id","line_id","direction","line_name","line_number","monitored","starting_time","time_demand_type",),
             x
         )),
         journey_data
@@ -179,7 +181,7 @@ WHERE lines.id = %s ORDER BY journey, point_order;
 
     departure_list = list(map(
         lambda x: dict(zip(
-            ("journey","number","name","order","quay","timing_point","runtime","waittime","scheduled_stop_point"),
+            ("journey","number","name","order","quay","timing_point","runtime","waittime","scheduled_stop_point", "boarding", "alighting"),
             x
         )),
         departure_data
@@ -263,6 +265,9 @@ WHERE lines.id = %s ORDER BY journey, point_order;
                 'availabilities':[i['id'] for i in availabilities]
             }
 
+            if 'boarding' in departure and departure['boarding'] == False: departure_info['boarding'] = departure['boarding']
+            if 'alighting' in departure and departure['alighting'] == False: departure_info['alighting'] = departure['alighting']
+
             departure_order_count = quay_direction_orders.setdefault(str(departure['order']), 0)
             departure_order_count = departure_order_count + 1
 
@@ -308,7 +313,6 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     else:
         return None
     
-
     availabilities_query = """
     SELECT validity_conditions.*, availabilities_per_journey.journey FROM availabilities_per_journey
     INNER JOIN (
@@ -350,6 +354,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     if len(journey_ids) == 0: 
         print('Geen ritten')
         return None
+    
 
     journeys_query = """
     SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
@@ -363,7 +368,8 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 		SELECT name FROM operators WHERE operators.id = lines.operator
 	) operator, (
 		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
-	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource
+	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
+    COALESCE(journeys.monitored, lines.monitored) AS monitored
     FROM journeys
     INNER JOIN (
 		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
@@ -405,8 +411,12 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
             # },
             'StartingTime':journey[18],
             'DataSourceCode':journey[19],
+            'Monitored':journey[20],
             'Calls':{},
         }
+
+        if planned_journey['Monitored'] != False:
+            del planned_journey['Monitored']
 
         planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
 
@@ -420,12 +430,16 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     waittimes.time_demand_type = journeys.time_demand_type AND
     (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
     ) AS "waittime", stoppoint_information.stopplace,
-    stoppoint_information.public_code, stoppoint_information.direction, stoppoint_information.public_name, stoppoint_information.town
+    stoppoint_information.public_code, stoppoint_information.direction, stoppoint_information.public_name, stoppoint_information.town,
+    COALESCE(points_in_pattern.for_boarding, stoppoint_information.for_boarding) for_boarding,
+    COALESCE(points_in_pattern.for_alighting, stoppoint_information.for_alighting) for_alighting
     FROM journeys
     INNER JOIN patterns ON patterns.id = journeys.pattern
     INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
     LEFT JOIN (
-        SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town FROM scheduled_stop_points
+        SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town,
+        scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding
+        FROM scheduled_stop_points
         LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
         LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
         LEFT JOIN stopplaces ON stopplaces.id = rel_quay_stopplace.stopplace
@@ -472,6 +486,11 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
                 'AimedDepartureTime':None
             }
 
+            boarding = departure[12]
+            alighting = departure[13]
+            if boarding is not None: departure_data['ForBoarding'] = boarding
+            if alighting is not None: departure_data['ForAlighting'] = alighting
+
             if index != 0:
                 departure_data['AimedArrivalTime'] = time_tracker.isoformat()
 
@@ -506,6 +525,8 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 
         planned_journeys[journey_id]['Calls'] = calls
 
+        del planned_journeys[journey_id]['StartingTime']
+
 
     notice_able_ids = set()
     for journey_id in planned_journeys:
@@ -521,10 +542,40 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
         notice = dict(zip(
             ('id','for','text'), notice_record
         ))
-        notices_per_id[notice['id']] = notice_record
+        notices_per_id[notice['id']] = notice['text']
         for_list = notices_per_for.setdefault(notice['for'], [])
         for_list.append(notice['id'])
-    
+
+    stopplaces = tuple(map(lambda x: x['StopPlace'], scheduled_stop_points.values()))
+    interchanges_query = """
+    SELECT point_from,
+        CASE
+            WHEN connections > 2 OR connections > quays THEN TRUE 
+            ELSE FALSE
+        END
+    FROM (
+        SELECT stopplace_connections.point_from, COUNT(DISTINCT stopplace_connections.point_to) AS connections, (
+            SELECT COUNT(b.quay) FROM rel_quay_stopplace AS b
+            WHERE b.stopplace = stopplace_connections.point_from
+        ) AS quays
+        FROM (
+            SELECT t1.stopplace AS point_from, lead(t1.stopplace) OVER (PARTITION BY t1.pattern ORDER BY t1.point_order) AS point_to FROM (
+                SELECT * FROM points_in_pattern 
+                LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
+                LEFT JOIN rel_quay_stopplace ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+                WHERE stopplace IS NOT NULL
+            ) t1
+        ) stopplace_connections  WHERE stopplace_connections.point_from IN %s AND
+        stopplace_connections.point_to IS NOT NULL 
+        GROUP BY stopplace_connections.point_from
+    ) AS connection_summary;"""
+    interchanges_data = dict(querying.query_all(cur, interchanges_query, (stopplaces,)))
+
+
+    for scheduled_stop_point in scheduled_stop_points:
+        if scheduled_stop_points[scheduled_stop_point]['StopPlace'] in interchanges_data:
+            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']] == True:
+                scheduled_stop_points[scheduled_stop_point]['Interchange'] = True
 
     return {
         'scheduled_stop_points':scheduled_stop_points,
