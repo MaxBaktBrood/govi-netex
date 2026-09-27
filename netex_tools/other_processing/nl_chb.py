@@ -64,6 +64,10 @@ class CHB(NetexBase):
                     stopplace_data.name = f'{stopplace_data.town}, {stopplace_data.public_name}'
                 else: stopplace_data.name = stopplace_data.public_name
             
+            type_el = stopplace.find('./c:stopplacetype', ns)
+            if type_el is not None:
+                stopplace_data.type = type_el.text
+            
             stopplaces[stopplace_data.id] = stopplace_data
 
             for quay in stopplace.findall('./c:quays/c:quay', ns):

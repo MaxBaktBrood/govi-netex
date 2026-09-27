@@ -55,6 +55,7 @@ class Line:
     responsibility_set: Optional[str] = None
     custom_category: Optional[str] = None
     datasource_code: Optional[str] = None
+    monitored: Optional[bool] = None
 
 @dataclass
 class Route:
@@ -136,6 +137,8 @@ class ScheduledStopPoint:
     name: Optional[str] = None
     stop_area: Optional[str] = None
     location: Optional[str] = None
+    for_boarding: Optional[bool] = None
+    for_alighting: Optional[bool] = None
 
 @dataclass
 class StopArea:
@@ -158,7 +161,7 @@ class Journey:
     number: Optional[str] = None
     pattern: Optional[str] = None
     in_scope_of_operator: Optional[bool] = None
-    realtime_info: Optional[bool] = None
+    monitored: Optional[bool] = None
     vehicle_type: Optional[str] = None
     starting_time: Optional[str] = None
     time_demand_type: Optional[str] = None
@@ -186,7 +189,8 @@ class Stopplace:
     placecode: Optional[str] = None
     public_name: Optional[str] = None
     town: Optional[str] = None
-    street: Optional[str] = None
+    street: Optional[str] = None,
+    type: Optional[str] = None
 
 @dataclass
 class Quay:

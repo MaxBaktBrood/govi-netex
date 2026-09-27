@@ -375,7 +375,10 @@ class NetexNL(NetexBase):
             if 'responsibilitySetRef' in line.attrib:
                 line_data.responsibility_set = line.attrib['responsibilitySetRef']
 
-            
+            monitored_el = line.find('./n:Monitored', self.ns)
+            if monitored_el is not None and monitored_el.text != 'true':
+                line_data.monitored = False
+  
             type_of_service_ref_el = line.find('./n:TypeOfServiceRef', self.ns)
             if type_of_service_ref_el is not None:
                 line_data.type_of_service = type_of_service_ref_el.attrib['ref']
@@ -661,6 +664,16 @@ class NetexNL(NetexBase):
                 stop_point_data.location = ' '.join(
                     map(str, self.transformer.transform(*stop_point_data.location.split(' ')))
                 )
+            
+            boarding_el = stop_point.find('./n:ForBoarding', self.ns)
+            if boarding_el is not None:
+                boarding = (boarding_el.text == 'true')
+                stop_point_data.for_boarding = boarding
+
+            alighting_el = stop_point.find('./n:ForAlighting', self.ns)
+            if alighting_el is not None:
+                alighting = (alighting_el.text == 'true')
+                stop_point_data.for_alighting = alighting
 
             scheduled_stop_points[stop_point_data.id] = stop_point_data
         
@@ -747,7 +760,13 @@ class NetexNL(NetexBase):
             if journey_number_el is not None: journey_data.number = journey_number_el.text
 
             realtime_info_el = journey.find(f'./n:Monitored', self.ns)
-            if realtime_info_el is not None: journey_data.realtime_info = (realtime_info_el.text == 'true')
+            if realtime_info_el is not None: 
+                journey_data.monitored = (realtime_info_el.text == 'true')
+            else:
+                realtime_info_el = timetable.find(f'./n:Monitored', self.ns)
+                if realtime_info_el is not None: 
+                    journey_data.monitored = (realtime_info_el.text == 'true')
+
 
             journeys[journey_data.id] = journey_data
         
