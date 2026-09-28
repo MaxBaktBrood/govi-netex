@@ -189,7 +189,7 @@ class Stopplace:
     placecode: Optional[str] = None
     public_name: Optional[str] = None
     town: Optional[str] = None
-    street: Optional[str] = None,
+    street: Optional[str] = None
     type: Optional[str] = None
 
 @dataclass
@@ -210,3 +210,23 @@ class Notice:
     id: str
     notice_for: str
     text: str
+
+@dataclass
+class VehicleType:
+    id: Optional[str] = None
+    name: Optional[str] = None
+    short_name: Optional[str] = None
+    fuel_type: Optional[str] = None
+    euro_class: Optional[str] = None
+    transport_mode: Optional[str] = None
+    length: Optional[float] = None
+
+@dataclass
+class Vehicle:
+    id: Optional[str] = None
+    operational_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    operator: Optional[str] = None
+    valid_from: Optional[datetime] = None
+    valid_through: Optional[datetime] = None
+    vehicle_type: Optional[str] = None

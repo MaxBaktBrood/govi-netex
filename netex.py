@@ -121,6 +121,8 @@ class Netex(NetexDefaults):
 
             self.journeys = processer.craftJourneys(service=service, timetable=timetable)
 
+            self.vehicles = processer.craftVehicleInfo(resource=resource)
+
             processer.getNotices(service=service)
 
             processer.db_indexes()

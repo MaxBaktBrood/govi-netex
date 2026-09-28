@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Notice
 
 
 class NetexBase:
@@ -796,7 +796,7 @@ class NetexNL(NetexBase):
         self.to_db('rel_stoppoint_quaycode', RelStoppointQuaycode, rel_stoppoint_quaycode)
 
     def get_stopplaces(self, site:ET.Element):
-        rel_quay_stopplace: list[rel_quay_stopplace] = []
+        rel_quay_stopplace: list[RelQuayStopplace] = []
         stopplaces: dict[str, Stopplace] = {}
         quays: dict[str, Quay] = {}
 
@@ -859,6 +859,65 @@ class NetexNL(NetexBase):
             displays[display_data.id] = display_data
         
         self.to_db('destination_displays', DestinationDisplay, displays)
+
+
+    def get_vehicle_types(self, resource:ET.Element):
+        vehicle_types: dict[str, VehicleType] = {}
+
+        for vehicle_type_el in resource.findall(f"./n:vehicleTypes/n:VehicleType", self.ns):
+            vehicle_type_data = VehicleType(vehicle_type_el.attrib['id'])
+
+            name_el = vehicle_type_el.find('./n:Name', self.ns)
+            if name_el is not None: vehicle_type_data.name = name_el.text
+
+            euro_class_el = vehicle_type_el.find('./n:ShortName', self.ns)
+            if euro_class_el is not None: vehicle_type_data.short_name = euro_class_el.text
+
+            euro_class_el = vehicle_type_el.find('./n:FuelType', self.ns)
+            if euro_class_el is not None: vehicle_type_data.fuel_type = euro_class_el.text
+
+            euro_class_el = vehicle_type_el.find('./n:EuroClass', self.ns)
+            if euro_class_el is not None: vehicle_type_data.euro_class = euro_class_el.text
+
+            transport_mode_el = vehicle_type_el.find('./n:TransportMode', self.ns)
+            if transport_mode_el is not None: vehicle_type_data.transport_mode = transport_mode_el.text
+
+            length_el = vehicle_type_el.find('./n:Length', self.ns)
+            if length_el is not None: vehicle_type_data.length = length_el.text
+
+            vehicle_types[vehicle_type_data.id] = vehicle_type_data
+        
+        self.to_db('vehicle_types', VehicleType, vehicle_types)
+
+    def get_vehicles(self, resource:ET.Element):
+        vehicles: dict[str, Vehicle] = {}
+
+        for vehicle_el in resource.findall(f"./n:vehicles/n:Vehicle", self.ns):
+            vehicle_type_data = Vehicle(vehicle_el.attrib['id'])
+
+            operational_number_el = vehicle_el.find('./n:OperationalNumber', self.ns)
+            if operational_number_el is not None: vehicle_type_data.operational_number = operational_number_el.text
+
+            registration_number_el = vehicle_el.find('./n:RegistrationNumber', self.ns)
+            if registration_number_el is not None: vehicle_type_data.registration_number = registration_number_el.text
+
+            operator_el = vehicle_el.find('./n:OperatorRef', self.ns)
+            if operator_el is not None and'ref' in operator_el.attrib:
+                vehicle_type_data.operator = operator_el.attrib['ref']
+
+            valid_from_el = vehicle_el.find('./n:ValidBetween/n:FromDate', self.ns)
+            if valid_from_el is not None: vehicle_type_data.valid_from = valid_from_el.text
+
+            valid_to_el = vehicle_el.find('./n:ValidBetween/n:ToDate', self.ns)
+            if valid_to_el is not None: vehicle_type_data.valid_through = valid_to_el.text
+
+            vehicle_type_el = vehicle_el.find('./n:VehicleTypeRef', self.ns)
+            if vehicle_type_el is not None and 'ref' in vehicle_type_el.attrib:
+                vehicle_type_data.vehicle_type = vehicle_type_el.attrib['ref']
+
+            vehicles[vehicle_type_data.id] = vehicle_type_data
+        
+        self.to_db('vehicles', Vehicle, vehicles)
 
     def getNotices(self, service:ET.Element, #only_used=True
     ):
@@ -926,6 +985,11 @@ class NetexNL(NetexBase):
         if timetable is not None:
             self.get_validity_conditions(timetable)
             self.get_journeys(timetable)   
+
+    def craftVehicleInfo(self, resource:ET.Element):
+        if resource is not None:
+            self.get_vehicle_types(resource)
+            self.get_vehicles(resource)
 
     def enum(self, enum_list:list[ET.Element]=[]):
         frames = []
