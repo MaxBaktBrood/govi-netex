@@ -230,3 +230,24 @@ class Vehicle:
     valid_from: Optional[datetime] = None
     valid_through: Optional[datetime] = None
     vehicle_type: Optional[str] = None
+
+@dataclass
+class Vehicle:
+    id: Optional[str] = None
+    operational_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    operator: Optional[str] = None
+    valid_from: Optional[datetime] = None
+    valid_through: Optional[datetime] = None
+    vehicle_type: Optional[str] = None
+
+@dataclass
+class Block:
+    id: Optional[str] = None
+    private_code: Optional[str] = None
+    vehicle_type: Optional[str] = None
+
+@dataclass
+class RelBlockJourney:
+    block: str
+    journey: str
