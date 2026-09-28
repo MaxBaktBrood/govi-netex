@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice
 
 
 class NetexBase:
@@ -883,7 +883,7 @@ class NetexNL(NetexBase):
             if transport_mode_el is not None: vehicle_type_data.transport_mode = transport_mode_el.text
 
             length_el = vehicle_type_el.find('./n:Length', self.ns)
-            if length_el is not None: vehicle_type_data.length = length_el.text
+            if length_el is not None: vehicle_type_data.length = float(length_el.text)
 
             vehicle_types[vehicle_type_data.id] = vehicle_type_data
         
@@ -906,10 +906,10 @@ class NetexNL(NetexBase):
                 vehicle_type_data.operator = operator_el.attrib['ref']
 
             valid_from_el = vehicle_el.find('./n:ValidBetween/n:FromDate', self.ns)
-            if valid_from_el is not None: vehicle_type_data.valid_from = valid_from_el.text
+            if valid_from_el is not None: vehicle_type_data.valid_from = datetime.fromisoformat(valid_from_el.text)
 
             valid_to_el = vehicle_el.find('./n:ValidBetween/n:ToDate', self.ns)
-            if valid_to_el is not None: vehicle_type_data.valid_through = valid_to_el.text
+            if valid_to_el is not None: vehicle_type_data.valid_through = datetime.fromisoformat(valid_to_el.text)
 
             vehicle_type_el = vehicle_el.find('./n:VehicleTypeRef', self.ns)
             if vehicle_type_el is not None and 'ref' in vehicle_type_el.attrib:
@@ -918,6 +918,34 @@ class NetexNL(NetexBase):
             vehicles[vehicle_type_data.id] = vehicle_type_data
         
         self.to_db('vehicles', Vehicle, vehicles)
+
+    def get_blocks(self, vehicleSchedule:ET.Element):
+        blocks: dict[str, Block] = {}
+        rel_block_journey: list[RelBlockJourney] = []
+
+        for block_el in vehicleSchedule.findall(f"./n:blocks/n:Block", self.ns):
+            block_data = Block(block_el.attrib['id'])
+
+            private_code_el = block_el.find('./n:privateCodes/n:PrivateCode[type="BlockCode"]', self.ns)
+            if private_code_el is not None: block_data.private_code = private_code_el.text
+
+            vehicle_type_el = block_el.find('./n:VehicleTypeRef', self.ns)
+            if vehicle_type_el is not None and 'ref' in vehicle_type_el.attrib:
+                block_data.vehicle_type = vehicle_type_el.attrib['ref']
+
+            blocks[block_data.id] = block_data
+
+            for journey in block_el.find('./n:journeys/n:ServiceJourneyRef', self.ns):
+                if 'ref' in journey.attrib:
+                    rel_block_journey.append(RelBlockJourney(
+                        block_data.id,
+                        journey.attrib['ref']
+                    ))
+
+        self.to_db('blocks', Block, blocks)
+        self.to_db('rel_block_journey', RelPointRoute, dict(
+            (str(i), x) for i, x in enumerate(rel_block_journey)
+        ))
 
     def getNotices(self, service:ET.Element, #only_used=True
     ):
@@ -969,7 +997,7 @@ class NetexNL(NetexBase):
             self.site_enum(site)   
 
     
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element):
+    def craftJourneys(self, service:ET.Element, timetable:ET.Element, vehicleSchedule:ET.Element=None):
 
         if service is not None:
             self.get_run_waittimes(service)
@@ -984,7 +1012,10 @@ class NetexNL(NetexBase):
         
         if timetable is not None:
             self.get_validity_conditions(timetable)
-            self.get_journeys(timetable)   
+            self.get_journeys(timetable)  
+
+        if vehicleSchedule is not None:
+            self.get_blocks(vehicleSchedule) 
 
     def craftVehicleInfo(self, resource:ET.Element):
         if resource is not None:

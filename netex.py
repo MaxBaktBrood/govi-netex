@@ -109,19 +109,18 @@ class Netex(NetexDefaults):
                 case _:
                     processer = NetexNL(self.defaults, self.options, self.ns, self.transformer)
 
-            if service is None: 
-                if general is not None or resource is not None or site is not None:
-                    processer.enum_frames([compositeFrame])
-                continue
+            # if service is None: 
+            #     if general is not None or resource is not None or site is not None:
+            #         processer.enum_frames([compositeFrame])
+            #     continue
 
+            self.vehicles = processer.craftVehicleInfo(resource=resource)
 
             self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site)
 
             if timetable is None: continue
 
-            self.journeys = processer.craftJourneys(service=service, timetable=timetable)
-
-            self.vehicles = processer.craftVehicleInfo(resource=resource)
+            self.journeys = processer.craftJourneys(service=service, timetable=timetable, vehicleSchedule=vehicleSchedule)
 
             processer.getNotices(service=service)
 
