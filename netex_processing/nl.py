@@ -976,7 +976,47 @@ class NetexNL(NetexBase):
 
             processed_notices[notice_id] = Notice(notice_id, notice_for, notice_text)
             
-        self.to_db('notices', Notice, processed_notices)  
+        self.to_db('notices', Notice, processed_notices) 
+
+    def get_areas(self, general:ET.Element):
+
+        areas = {}
+        @dataclass
+        class Area:
+            id: str
+            name: Optional[str] = None
+            code: Optional[str] = None
+        
+        for area_el in general.findall(f"./n:members/n:TransportAdministrativeZone", self.ns):
+            area_data = Area(area_el.attrib['id'])
+
+            name = area_el.find('./n:Name', self.ns)
+            if name is not None:
+                area_data.name = name.text
+            code = area_el.find('./n:ShortName', self.ns)
+            if code is not None:
+                area_data.code = code.text
+
+            areas[area_data.id] = area_data
+
+        self.to_db('areas', Area, areas)
+
+    def get_types_of_service(self, general:ET.Element):
+        types_of_service = {}
+        @dataclass
+        class TypeOfService:
+            id: str
+            name: Optional[str] = None
+
+        for type_of_service_el in general.findall(f"./n:members/n:ValueSet/n:values/n:TypeOfService", self.ns):
+            type_data = TypeOfService(type_of_service_el.attrib['id'])
+            
+            name = type_of_service_el.find('./n:Name', self.ns)
+            if name is not None:
+                type_data.name = name.text
+                types_of_service[type_data.id] = type_data
+
+        self.to_db('types_of_service', TypeOfService, types_of_service) 
 
     def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None):
         if resource is not None:
@@ -1094,6 +1134,11 @@ class NetexNL(NetexBase):
         self.to_db('authorities', Authority, authorities)
         self.to_db('areas', Area, areas)
         self.to_db('types_of_service', TypeOfService, types_of_service)
+
+    def craftGeneralInfo(self, general:ET.Element):
+        if general is not None:
+            self.get_areas(general)
+            self.get_types_of_service(general)
 
     def __init__(self, defaults, options, ns, transformer=None):
         super().__init__(defaults=defaults, options=options)

@@ -114,17 +114,21 @@ class Netex(NetexDefaults):
             #         processer.enum_frames([compositeFrame])
             #     continue
 
-            self.vehicles = processer.craftVehicleInfo(resource=resource)
+            if service is not None:
+                self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site)
+                processer.getNotices(service=service)
 
-            self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site)
+            if timetable is not None and service is not None:
+                self.journeys = processer.craftJourneys(service=service, timetable=timetable, vehicleSchedule=vehicleSchedule)
 
-            if timetable is None: continue
+            if resource is not None:
+                self.vehicles = processer.craftVehicleInfo(resource=resource)
 
-            self.journeys = processer.craftJourneys(service=service, timetable=timetable, vehicleSchedule=vehicleSchedule)
+            if general is not None:
+                processer.craftGeneralInfo(general=general)         
 
-            processer.getNotices(service=service)
-
-            processer.db_indexes()
+            if service is not None:
+                processer.db_indexes()
 
 
         if processer.cur: processer.cur.close()
