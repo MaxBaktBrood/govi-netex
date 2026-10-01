@@ -324,6 +324,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
     ) AS locations ON locations.journey = availabilities_per_journey.journey
     INNER JOIN validity_conditions ON validity_conditions.id = availabilities_per_journey.availability
     WHERE locations.stopplace = %s AND
+    is_available IS NOT FALSE AND
     available_from <= %s AND available_through >= %s;
     """
     timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
@@ -337,13 +338,14 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
         period = {
             'from':availability[1],
             'through':availability[2],
-            'bits':availability[3]
+            'bits':availability[3],
+            'is_available':availability[4]
         }
         if not period['from'] or not period['through']: continue
         if not period['from'].tzinfo: period['from'] = period['from'].replace(tzinfo=tz)
         if not period['through'].tzinfo: period['through'] = period['through'].replace(tzinfo=tz)
 
-        journey_id = availability[4]
+        journey_id = availability[5]
 
         diff = (timestamp - period['from']).days
 
@@ -369,7 +371,7 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 	) operator, (
 		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
 	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
-    COALESCE(journeys.monitored, lines.monitored) AS monitored
+    COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.short_name, vehicle_types.name) AS vehicle, vehicle_types.length AS vehicle_length
     FROM journeys
     INNER JOIN (
 		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
@@ -377,6 +379,10 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
 	) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
     INNER JOIN routes ON routes.id = patterns_and_displays.route
     INNER JOIN lines ON lines.id = routes.line
+    LEFT JOIN rel_block_journey ON rel_block_journey.journey = journeys.id
+    LEFT JOIN blocks ON blocks.id = rel_block_journey.block
+    LEFT JOIN vehicle_types ON vehicle_types.id = COALESCE(journeys.vehicle_type, blocks.vehicle_type)
+
     WHERE journeys.id IN %s
     """
 
@@ -412,6 +418,9 @@ def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
             'StartingTime':journey[18],
             'DataSourceCode':journey[19],
             'Monitored':journey[20],
+            'Block':journey[21],
+            'VehicleType':journey[22],
+            'VehicleLength':journey[23],
             'Calls':{},
         }
 
