@@ -742,6 +742,10 @@ class NetexNL(NetexBase):
             if pattern_ref is not None: # and patterns is not None
                 journey_data.pattern = pattern_ref.attrib["ref"]
 
+            vehicle_type_ref = journey.find('./n:VehicleTypeRef', self.ns)
+            if vehicle_type_ref is not None: # and patterns is not None
+                journey_data.vehicle_type = vehicle_type_ref.attrib["ref"]
+
             if journey.find('./n:validityConditions', self.ns) is not None:
                 refs = journey.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
                 for ref in refs:
@@ -929,7 +933,7 @@ class NetexNL(NetexBase):
         for block_el in vehicleSchedule.findall(f"./n:blocks/n:Block", self.ns):
             block_data = Block(block_el.attrib['id'])
 
-            private_code_el = block_el.find('./n:privateCodes/n:PrivateCode[type="BlockCode"]', self.ns)
+            private_code_el = block_el.find('./n:privateCodes/n:PrivateCode[@type="BlockCode"]', self.ns)
             if private_code_el is not None: block_data.private_code = private_code_el.text
 
             vehicle_type_el = block_el.find('./n:VehicleTypeRef', self.ns)
