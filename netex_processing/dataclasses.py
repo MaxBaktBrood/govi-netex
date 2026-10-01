@@ -154,6 +154,7 @@ class AvailabilityCondition:
     available_from: Optional[datetime] = None
     available_through: Optional[datetime] = None
     bits: Optional[str] = None
+    is_available: Optional[bool] = None
 
 @dataclass
 class Journey:

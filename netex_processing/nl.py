@@ -716,6 +716,9 @@ class NetexNL(NetexBase):
             condition_bits = condition.find('./n:ValidDayBits', self.ns)
             if condition_bits is not None: condition_data.bits = condition_bits.text
 
+            available = condition.find('./n:IsAvailable', self.ns)
+            if available is not None: condition_data.is_available = (condition_bits.text == 'true')
+
             validity_conditions[condition_data.id] = condition_data
         
         self.to_db('validity_conditions', AvailabilityCondition, validity_conditions)
@@ -935,7 +938,7 @@ class NetexNL(NetexBase):
 
             blocks[block_data.id] = block_data
 
-            for journey in block_el.find('./n:journeys/n:ServiceJourneyRef', self.ns):
+            for journey in block_el.findall('./n:journeys/n:ServiceJourneyRef', self.ns):
                 if 'ref' in journey.attrib:
                     rel_block_journey.append(RelBlockJourney(
                         block_data.id,
@@ -943,7 +946,7 @@ class NetexNL(NetexBase):
                     ))
 
         self.to_db('blocks', Block, blocks)
-        self.to_db('rel_block_journey', RelPointRoute, dict(
+        self.to_db('rel_block_journey', RelBlockJourney, dict(
             (str(i), x) for i, x in enumerate(rel_block_journey)
         ))
 
