@@ -457,8 +457,8 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
         LEFT JOIN quays ON quays.id = rel_quay_stopplace.quay
     ) AS stoppoint_information ON stoppoint_information.id = points_in_pattern.stoppoint
     WHERE journeys.id IN %s
-    ORDER BY journey, points_in_pattern.point_order
-    """
+    ORDER BY journey, points_in_pattern.pattern, points_in_pattern.point_order
+    """               # ^ Does this help..?
 
     departures = querying.query_all(cur, departures_query, (journey_ids,))
     departures_per_journey = {}
