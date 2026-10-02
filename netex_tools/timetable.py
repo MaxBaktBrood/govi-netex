@@ -443,13 +443,13 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
     ) AS "waittime", stoppoint_information.stopplace,
     stoppoint_information.public_code, stoppoint_information.direction, stoppoint_information.public_name, stoppoint_information.town,
     COALESCE(points_in_pattern.for_boarding, stoppoint_information.for_boarding) for_boarding,
-    COALESCE(points_in_pattern.for_alighting, stoppoint_information.for_alighting) for_alighting
+    COALESCE(points_in_pattern.for_alighting, stoppoint_information.for_alighting) for_alighting, stoppoint_information.type
     FROM journeys
     INNER JOIN patterns ON patterns.id = journeys.pattern
     INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
     LEFT JOIN (
         SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town,
-        scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding
+        scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding, stopplaces.type
         FROM scheduled_stop_points
         LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
         LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
