@@ -127,9 +127,6 @@ class Netex(NetexDefaults):
             if general is not None:
                 processer.craftGeneralInfo(general=general)         
 
-            if service is not None:
-                processer.db_indexes()
-
 
         if processer.cur: processer.cur.close()
         if processer.con: processer.con.close()
