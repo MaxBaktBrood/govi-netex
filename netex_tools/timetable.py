@@ -300,7 +300,9 @@ WHERE lines.id = %s ORDER BY journey, point_order;
     return entry
 
 # Only Postgres support
-def getDepartures(stopplace, timestamp=datetime.now(), secrets_file_path=None):
+def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
+    if not timestamp: timestamp = datetime.now()
+
     con = None
     cur = None
     querying = None
