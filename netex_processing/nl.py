@@ -11,6 +11,35 @@ from netex_processing.dataclasses import Branding, ProductType, Operator, Author
 
 class NetexBase:
 
+    def create_indexes(self, name):
+        if not self.cur: self.cur = self.con.cursor()
+
+        match name:
+            case 'runtimes':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS runtimes_time_demand ON runtimes(time_demand_type, timing_link);')
+                self.con.commit()
+            case 'waittimes':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS waittimes_time_demand ON waittimes(time_demand_type);')
+                self.con.commit()
+            case 'availabilities_per_journey':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_availabilities_per_journey ON availabilities_per_journey(journey);')
+                self.con.commit()
+            case 'rel_point_route':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_point_route ON rel_point_route(route);')
+                self.con.commit()
+            case 'rel_responsibility_area':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_responsibility_area ON rel_responsibility_area(responsibility);')
+                self.con.commit()
+            case 'rel_quay_stopplace':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_quay_stopplace ON rel_quay_stopplace(quay);')
+                self.con.commit()
+            case 'points_in_pattern':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_points_in_pattern ON points_in_pattern(pattern, point_order);')
+                self.con.commit()
+            case 'notices':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_notices ON notices(notice_for);')
+                self.con.commit()
+
     def to_sqlite(self, name, dataclass, data={}):
         
         cols = []            
@@ -135,11 +164,15 @@ class NetexBase:
 
     def to_db(self, name, dataclass, data={}, overwriteExisting=True):
         if not 'db' in self.options: 
-            return self.to_sqlite(name, dataclass, data)
-        match self.options['db']:
-            case 'postgres': self.to_postgres(name, dataclass, data, overwriteExisting)
-            case 'sqlite': self.to_sqlite(name, dataclass, data)
-            case _: self.to_sqlite(name, dataclass, data)
+            self.to_sqlite(name, dataclass, data)
+        else:
+            match self.options['db']:
+                case 'postgres': self.to_postgres(name, dataclass, data, overwriteExisting)
+                case 'sqlite': self.to_sqlite(name, dataclass, data)
+                case _: self.to_sqlite(name, dataclass, data)
+        
+        self.create_indexes(name)
+
     
     def __init__(self, defaults=None, options={}):
         self.options = options
@@ -156,17 +189,6 @@ class NetexBase:
             self.cur = self.con.cursor()
 
 class NetexNL(NetexBase):
- 
-    def db_indexes(self):
-        if not self.cur: self.cur = self.con.cursor()
-        self.cur.execute('CREATE INDEX IF NOT EXISTS runtimes_time_demand ON runtimes(time_demand_type, timing_link);')
-        self.cur.execute('CREATE INDEX IF NOT EXISTS waittimes_time_demand ON waittimes(time_demand_type, scheduled_stop_point, timing_point);')
-        self.cur.execute('CREATE INDEX IF NOT EXISTS idx_availabilities_per_journey ON availabilities_per_journey(journey);')
-        self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_point_route ON rel_point_route(route);')
-        self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_responsibility_area ON rel_responsibility_area(responsibility);')
-        # self.cur.execute('CREATE INDEX IF NOT EXISTS idx_rel_stoppoint_quaycode ON rel_stoppoint_quaycode(stoppoint);')
-        self.con.commit()
-
     def to_datetime(self, text):
         return datetime.fromisoformat(text).replace(tzinfo=self.defaults['timezone'])#.isoformat()
     
@@ -607,8 +629,7 @@ class NetexNL(NetexBase):
 
                 destination_display_el = point.find('./n:DestinationDisplayRef', self.ns)
                 if destination_display_el is not None:
-                    destination_display = destination_display_el.text
-                    point_data.destination_display = destination_display
+                    point_data.destination_display = destination_display_el.attrib['ref']
 
                 boarding_el = point.find('./n:ForBoarding', self.ns)
                 if boarding_el is not None:
