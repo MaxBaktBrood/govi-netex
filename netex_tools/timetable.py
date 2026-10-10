@@ -445,8 +445,7 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
     COALESCE(points_in_pattern.for_boarding, stoppoint_information.for_boarding) for_boarding,
     COALESCE(points_in_pattern.for_alighting, stoppoint_information.for_alighting) for_alighting, stoppoint_information.type
     FROM journeys
-    INNER JOIN patterns ON patterns.id = journeys.pattern
-    INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
+    INNER JOIN points_in_pattern ON points_in_pattern.pattern = journeys.pattern
     LEFT JOIN (
         SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town,
         scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding, stopplaces.type
@@ -457,9 +456,8 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
         LEFT JOIN quays ON quays.id = rel_quay_stopplace.quay
     ) AS stoppoint_information ON stoppoint_information.id = points_in_pattern.stoppoint
     WHERE journeys.id IN %s
-    ORDER BY journey, points_in_pattern.pattern, points_in_pattern.point_order
-    """               # ^ Does this help..?
-
+    ORDER BY journey, points_in_pattern.point_order
+    """               
     departures = querying.query_all(cur, departures_query, (journey_ids,))
     departures_per_journey = {}
     for departure in departures: 
@@ -559,34 +557,51 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
 
     stopplaces = tuple(map(lambda x: x['StopPlace'], scheduled_stop_points.values()))
     interchanges_query = """
-    SELECT point_from,
-        CASE
-            WHEN connections > 2 OR connections > quays THEN TRUE 
-            ELSE FALSE
-        END
-    FROM (
-        SELECT stopplace_connections.point_from, COUNT(DISTINCT stopplace_connections.point_to) AS connections, (
+    SELECT stopplace,
+    CASE
+        WHEN connections > 2 OR connections > (
             SELECT COUNT(b.quay) FROM rel_quay_stopplace AS b
-            WHERE b.stopplace = stopplace_connections.point_from
-        ) AS quays
-        FROM (
-            SELECT t1.stopplace AS point_from, lead(t1.stopplace) OVER (PARTITION BY t1.pattern ORDER BY t1.point_order) AS point_to FROM (
-                SELECT * FROM points_in_pattern 
-                LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
-                LEFT JOIN rel_quay_stopplace ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
-                WHERE stopplace IS NOT NULL
-            ) t1
-        ) stopplace_connections  WHERE stopplace_connections.point_from IN %s AND
-        stopplace_connections.point_to IS NOT NULL 
+            WHERE b.stopplace = stopplaces.id
+        ) THEN TRUE 
+        ELSE FALSE
+    END AS is_interchange,
+    CASE
+        WHEN stopplaces.type IN (
+            'busStation','metroStation','railStation','tramStation','combiMetroTram'
+        ) THEN TRUE 
+        ELSE FALSE
+    END AS is_station
+    FROM (
+        SELECT point_from AS stopplace, COUNT(DISTINCT stopplace_connections.point_to) AS connections FROM (
+            WITH stopplaces_in_pattern AS (
+            SELECT pattern, point_order, stopplace FROM points_in_pattern AS x
+            INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = x.stoppoint
+            INNER JOIN rel_quay_stopplace ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+            )
+            SELECT stopplace AS point_from, lead(t1.stopplace) OVER (
+                PARTITION BY t1.pattern ORDER BY t1.point_order
+            ) AS point_to FROM stopplaces_in_pattern AS t1 WHERE pattern IN (
+                SELECT pattern FROM stopplaces_in_pattern WHERE stopplace IN %s
+            )
+        ) AS stopplace_connections WHERE point_from IN %s
         GROUP BY stopplace_connections.point_from
-    ) AS connection_summary;"""
-    interchanges_data = dict(querying.query_all(cur, interchanges_query, (stopplaces,)))
+    )
+    LEFT JOIN stopplaces ON stopplaces.id = stopplace"""
+    interchanges_data = dict(list(map(
+        lambda x: (x[0], {
+            "Interchange":x[1],
+            "Station":x[2]
+        },),
+        querying.query_all(cur, interchanges_query, (stopplaces, stopplaces))
+    )))
 
 
     for scheduled_stop_point in scheduled_stop_points:
         if scheduled_stop_points[scheduled_stop_point]['StopPlace'] in interchanges_data:
-            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']] == True:
+            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Interchange'] == True:
                 scheduled_stop_points[scheduled_stop_point]['Interchange'] = True
+            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Station'] == True:
+                scheduled_stop_points[scheduled_stop_point]['Station'] = True
 
     return {
         'scheduled_stop_points':scheduled_stop_points,
