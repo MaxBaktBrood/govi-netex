@@ -373,7 +373,7 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
 	) operator, (
 		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
 	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
-    COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.short_name, vehicle_types.name) AS vehicle, vehicle_types.length AS vehicle_length
+    COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.name, vehicle_types.short_name) AS vehicle, vehicle_types.length AS vehicle_length
     FROM journeys
     INNER JOIN (
 		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
