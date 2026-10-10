@@ -141,6 +141,13 @@ class ScheduledStopPoint:
     for_alighting: Optional[bool] = None
 
 @dataclass
+class TimingPoint:
+    id: str
+    route_point: Optional[str] = None
+    name: Optional[str] = None
+    location: Optional[str] = None
+
+@dataclass
 class StopArea:
     id: str
     public_code: Optional[str] = None

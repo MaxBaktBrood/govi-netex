@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, TimingPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice
 
 
 class NetexBase:
@@ -700,6 +700,39 @@ class NetexNL(NetexBase):
         
         self.to_db('scheduled_stop_points', ScheduledStopPoint, scheduled_stop_points)
 
+    def get_timing_points(self, service:ET.Element):
+        timing_points: dict[str, TimingPoint] = {}
+
+        for timing_point in service.findall('./n:timingPoints/n:TimingPoint', self.ns):
+            if 'id' not in timing_point.attrib: continue
+            timing_point_data = TimingPoint(timing_point.attrib['id'])
+
+            route_point_ref_el = timing_point.find("./n:projections/n:PointProjection/n:ProjectToPointRef", self.ns)
+            if route_point_ref_el is not None:
+                timing_point_data.route_point = route_point_ref_el.attrib['ref']
+
+            stop_point_name = timing_point.find("./n:Name", self.ns)
+            if stop_point_name is not None:
+                timing_point_data.name = stop_point_name.text
+            
+            stop_point_location = timing_point.find("./n:Location", self.ns)
+            if stop_point_location is not None:
+                gml = stop_point_location.find("./gml:pos", self.ns)
+
+                if gml is not None:
+                    timing_point_data.location = " ".join(str(x) for x in list(pygml.basics.parse_pos(gml.text)))
+                else:
+                    lng = stop_point_location.find('./n:Longitude', self.ns)
+                    lat = stop_point_location.find('./n:Latitude', self.ns)
+
+                    if lng is not None and lat is not None:
+                        timing_point_data.location = " ".join([lng.text, lat.text])
+            
+            timing_points[timing_point_data.id] = timing_point_data
+        
+        self.to_db('timing_points', TimingPoint, timing_points)
+    
+    
     def get_stop_areas(self, service:ET.Element):
         stop_areas: dict[str, StopArea] = {}
 
