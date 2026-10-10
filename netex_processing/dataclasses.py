@@ -228,6 +228,7 @@ class VehicleType:
     euro_class: Optional[str] = None
     transport_mode: Optional[str] = None
     length: Optional[float] = None
+    branding: Optional[str] = None
 
 @dataclass
 class Vehicle:
@@ -238,16 +239,7 @@ class Vehicle:
     valid_from: Optional[datetime] = None
     valid_through: Optional[datetime] = None
     vehicle_type: Optional[str] = None
-
-@dataclass
-class Vehicle:
-    id: Optional[str] = None
-    operational_number: Optional[str] = None
-    registration_number: Optional[str] = None
-    operator: Optional[str] = None
-    valid_from: Optional[datetime] = None
-    valid_through: Optional[datetime] = None
-    vehicle_type: Optional[str] = None
+    datasource_code: Optional[str] = None
 
 @dataclass
 class Block:

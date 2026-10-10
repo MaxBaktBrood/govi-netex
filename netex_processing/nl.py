@@ -771,7 +771,7 @@ class NetexNL(NetexBase):
             if condition_bits is not None: condition_data.bits = condition_bits.text
 
             available = condition.find('./n:IsAvailable', self.ns)
-            if available is not None: condition_data.is_available = (condition_bits.text == 'true')
+            if available is not None: condition_data.is_available = (available.text == 'true')
 
             validity_conditions[condition_data.id] = condition_data
         
@@ -946,6 +946,9 @@ class NetexNL(NetexBase):
             length_el = vehicle_type_el.find('./n:Length', self.ns)
             if length_el is not None: vehicle_type_data.length = float(length_el.text)
 
+            branding_ref_el = vehicle_type_el.find('./n:BrandingRef', self.ns)
+            if branding_ref_el is not None: vehicle_type_data.branding = branding_ref_el.attrib['ref']
+
             vehicle_types[vehicle_type_data.id] = vehicle_type_data
         
         self.to_db('vehicle_types', VehicleType, vehicle_types)
@@ -954,29 +957,33 @@ class NetexNL(NetexBase):
         vehicles: dict[str, Vehicle] = {}
 
         for vehicle_el in resource.findall(f"./n:vehicles/n:Vehicle", self.ns):
-            vehicle_type_data = Vehicle(vehicle_el.attrib['id'])
+            vehicle_data = Vehicle(vehicle_el.attrib['id'])
 
             operational_number_el = vehicle_el.find('./n:OperationalNumber', self.ns)
-            if operational_number_el is not None: vehicle_type_data.operational_number = operational_number_el.text
+            if operational_number_el is not None: vehicle_data.operational_number = operational_number_el.text
 
             registration_number_el = vehicle_el.find('./n:RegistrationNumber', self.ns)
-            if registration_number_el is not None: vehicle_type_data.registration_number = registration_number_el.text
+            if registration_number_el is not None: vehicle_data.registration_number = registration_number_el.text
 
             operator_el = vehicle_el.find('./n:OperatorRef', self.ns)
             if operator_el is not None and'ref' in operator_el.attrib:
-                vehicle_type_data.operator = operator_el.attrib['ref']
+                vehicle_data.operator = operator_el.attrib['ref']
 
             valid_from_el = vehicle_el.find('./n:ValidBetween/n:FromDate', self.ns)
-            if valid_from_el is not None: vehicle_type_data.valid_from = datetime.fromisoformat(valid_from_el.text)
+            if valid_from_el is not None: vehicle_data.valid_from = datetime.fromisoformat(valid_from_el.text)
 
             valid_to_el = vehicle_el.find('./n:ValidBetween/n:ToDate', self.ns)
-            if valid_to_el is not None: vehicle_type_data.valid_through = datetime.fromisoformat(valid_to_el.text)
+            if valid_to_el is not None: vehicle_data.valid_through = datetime.fromisoformat(valid_to_el.text)
 
             vehicle_type_el = vehicle_el.find('./n:VehicleTypeRef', self.ns)
             if vehicle_type_el is not None and 'ref' in vehicle_type_el.attrib:
-                vehicle_type_data.vehicle_type = vehicle_type_el.attrib['ref']
+                vehicle_data.vehicle_type = vehicle_type_el.attrib['ref']
 
-            vehicles[vehicle_type_data.id] = vehicle_type_data
+            datasource_el = resource.find('./n:dataSources/n:DataSource/n:ShortName', self.ns)
+            if datasource_el is not None:
+                vehicle_data.datasource_code = datasource_el.text
+
+            vehicles[vehicle_data.id] = vehicle_data
         
         self.to_db('vehicles', Vehicle, vehicles)
 
@@ -1103,11 +1110,11 @@ class NetexNL(NetexBase):
         if service is not None:
             self.get_run_waittimes(service)
             self.get_timing_links(service)
-            self.get_timing_links(service)
             self.get_rel_stoppoint_quaycode(service)
             self.get_rel_timing_route_points(service)
             self.get_patterns(service)
             self.get_scheduled_stop_points(service)
+            self.get_timing_points(service)
             self.get_stop_areas(service)
             self.get_destination_displays(service)
         
