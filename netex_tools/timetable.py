@@ -136,7 +136,9 @@ waittimes.timing_link = points_in_pattern.timing_link
 WHERE lines.id = %s;
     """
     departures_query = """
-SELECT journeys.id AS "journey", journeys.number, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
+SELECT journeys.id AS "journey", journeys.number, COALESCE(scheduled_stop_points.name, (
+    SELECT name FROM timing_points WHERE timing_points.id = points_in_pattern.timing_point
+)) AS name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
 points_in_pattern.timing_point,
 runtimes.time AS "runtime", waittimes.time AS "waittime", scheduled_stop_points.id AS scheduled_stop_point,
 COALESCE(points_in_pattern.for_boarding, scheduled_stop_points.for_boarding) for_boarding,
@@ -238,14 +240,27 @@ WHERE lines.id = %s ORDER BY journey, point_order;
         time_tracker = 0
 
         for departure in departures[journey['id']]:
-            
-            quay = direction.setdefault(departure['quay'], [])
-            quay_in_entry = entry['quays'].setdefault(departure['quay'], {
+
+            departure_key = departure['quay']
+            isTimingPoint = departure['timing_point'] is not None
+
+            if not departure['quay']:
+                if isTimingPoint:
+                    departure_key = departure['timing_point']
+                else:
+                    departure_key = departure['scheduled_stop_point']
+
+            quay = direction.setdefault(departure_key, [])
+
+            quay_in_entry = entry['quays'].setdefault(departure_key, {
                 'quay_name':departure['name'],
                 'quay_code':departure['quay'],
                 'quay_location':None,
                 'known_orders':{}
             })
+
+            if isTimingPoint:
+                quay_in_entry['timing_point'] = True
 
             quay_direction_orders = quay_in_entry['known_orders'].setdefault(
                 journey['direction'], {}
