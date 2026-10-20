@@ -79,7 +79,7 @@ SELECT lines.id, lines.code, brandings.name AS "branding", lines.name, number, t
     # area / parts
     # code / line_name / line_number / mode_of_transport / type
 
-def getLine(line_id = "", secrets_file_path=None):
+def getLine(line_id = "", availability="ONLY", secrets_file_path=None):
     con = None
     cur = None
     querying = None
@@ -112,11 +112,17 @@ SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id A
     WHERE lines.id = %s
 ;
     """
-    availabilities_query = """
+
+    availability_available_part = "AND validity_conditions.is_available IS NOT FALSE"
+    if availability != 'ONLY':
+        if availability == 'NOT':
+            availability_available_part = "AND validity_conditions.is_available IS FALSE"
+        else: availability_available_part = ""
+    availabilities_query = f"""
 SELECT validity_conditions.* FROM validity_conditions 
     INNER JOIN availabilities_per_journey ON availabilities_per_journey.availability = validity_conditions.id
     INNER JOIN journeys ON availabilities_per_journey.journey = journeys.id
-    WHERE journeys.id = %s
+    WHERE journeys.id = %s {availability_available_part}
     """
 
     departures_query_old = """
