@@ -135,10 +135,12 @@ class ScheduledStopPoint:
     id: str
     route_point: Optional[str] = None
     name: Optional[str] = None
+    code: Optional[str] = None
     stop_area: Optional[str] = None
     location: Optional[str] = None
     for_boarding: Optional[bool] = None
     for_alighting: Optional[bool] = None
+    datasource_code: Optional[str] = None
 
 @dataclass
 class TimingPoint:

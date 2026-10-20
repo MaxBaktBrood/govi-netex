@@ -666,6 +666,10 @@ class NetexNL(NetexBase):
             stop_point_name = stop_point.find("./n:Name", self.ns)
             if stop_point_name is not None:
                 stop_point_data.name = stop_point_name.text
+
+            user_stop_code = stop_point.find("./n:privateCodes/n:PrivateCode[@type='UserStopCode']", self.ns)
+            if user_stop_code is not None:
+                stop_point_data.code = user_stop_code.text
             
             stop_point_location = stop_point.find("./n:Location", self.ns)
             if stop_point_location is not None:
@@ -695,6 +699,8 @@ class NetexNL(NetexBase):
             if alighting_el is not None:
                 alighting = (alighting_el.text == 'true')
                 stop_point_data.for_alighting = alighting
+            
+            stop_point_data.datasource_code = self.defaults['datasource_code']
 
             scheduled_stop_points[stop_point_data.id] = stop_point_data
         
