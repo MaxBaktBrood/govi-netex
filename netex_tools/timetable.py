@@ -320,8 +320,219 @@ WHERE lines.id = %s ORDER BY journey, point_order;
 
     return entry
 
+
+def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying=None, secrets_file_path=None, user_stop_code=False):
+    if not timestamp: timestamp = datetime.now()
+    if con is None or cur is None or not querying:
+        con = None
+        cur = None
+        querying = None
+
+        postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+        if postgres_con is not None: 
+            con = postgres_con[0]
+            cur = con.cursor()
+            querying = PostgresQuerying()
+        else:
+            if not path.exists('./output/netex.db'): return []
+            netex_db = sqlite3.connect('./output/netex.db')
+            cur = netex_db.cursor()
+            querying = SQLiteQuerying()
+    
+    journeys_query = """
+    SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
+    journeys.pattern, lines.number AS line_number, lines.name AS "line_name", (
+		SELECT name FROM brandings WHERE brandings.id = lines.branding
+	) branding, 
+    lines.transport_mode, lines.transport_sub_mode, lines.public_code, (
+		SELECT name FROM authorities WHERE authorities.id = lines.authority
+	) authority, 
+    (
+		SELECT name FROM operators WHERE operators.id = lines.operator
+	) operator, (
+		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
+	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
+    COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.name, vehicle_types.short_name) AS vehicle, vehicle_types.length AS vehicle_length
+    FROM journeys
+    INNER JOIN (
+		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
+		LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
+	) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
+    INNER JOIN routes ON routes.id = patterns_and_displays.route
+    INNER JOIN lines ON lines.id = routes.line
+    LEFT JOIN rel_block_journey ON rel_block_journey.journey = journeys.id
+    LEFT JOIN blocks ON blocks.id = rel_block_journey.block
+    LEFT JOIN vehicle_types ON vehicle_types.id = COALESCE(journeys.vehicle_type, blocks.vehicle_type)
+
+    WHERE journeys.id IN %s
+    """
+
+    journey_ids = tuple(journey_ids)
+
+    journey_details = querying.query_all(cur, journeys_query, (journey_ids,))
+
+    planned_journeys = {}
+
+    for journey in journey_details:
+        planned_journey = {
+            'Line':journey[0],
+            'LineCode':journey[1],
+            'Direction':journey[2],
+            'DatedVehicleJourney':journey[3],
+            'DatedVehicleJourneyCode':journey[4],
+            'JourneyPattern':journey[5],
+            'PublishedLineName':journey[6],
+            'LineName':journey[7],
+            'Branding':journey[8],
+            'TransportMode':journey[9],
+            'TransportSubMode':journey[10],
+            'LinePublicCode':journey[11],
+            'Authority':journey[12],
+            'Operator':journey[13],
+            'TypeOfProduct':journey[14],
+            'DestinationDisplay':journey[15],
+            # 'DestinationDisplayOnBus':{
+            #     'Front':journey[16],
+            #     'Side':journey[17]
+            # },
+            'StartingTime':journey[18],
+            'DataSourceCode':journey[19],
+            'Monitored':journey[20],
+            'Block':journey[21],
+            'VehicleType':journey[22],
+            'VehicleLength':journey[23],
+            'Calls':{},
+        }
+
+        if planned_journey['Monitored'] != False:
+            del planned_journey['Monitored']
+
+        planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
+
+    stoppoint_part = "points_in_pattern.stoppoint AS scheduled_stop_point"
+    stoppoint_end_query = ""
+    if user_stop_code:
+        stoppoint_part = """
+        (SELECT datasource_code||':'||code FROM scheduled_stop_points WHERE scheduled_stop_points.id = points_in_pattern.stoppoint) 
+        AS user_stop_code
+        """
+        stoppoint_end_query = ", points_in_pattern.stoppoint AS scheduled_stop_point"
+
+    departures_query = f"""SELECT journeys.id AS "journey", {stoppoint_part}, 
+    points_in_pattern.point_order AS "order",
+    points_in_pattern.timing_point, (SELECT runtimes.time FROM runtimes
+    WHERE runtimes.time_demand_type = journeys.time_demand_type AND
+    runtimes.timing_link = points_in_pattern.timing_link
+    ) AS "runtime", 
+    (SELECT waittimes.time FROM waittimes WHERE
+    waittimes.time_demand_type = journeys.time_demand_type AND
+    (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
+    ) AS "waittime",
+    points_in_pattern.for_boarding,
+    points_in_pattern.for_alighting
+    {stoppoint_end_query}
+    FROM journeys
+    INNER JOIN points_in_pattern ON points_in_pattern.pattern = journeys.pattern
+    WHERE journeys.id IN %s
+    ORDER BY journey, points_in_pattern.point_order
+    """               
+    departures = querying.query_all(cur, departures_query, (journey_ids,))
+    departures_per_journey = {}
+    for departure in departures: 
+        departures_per_journey.setdefault(departure[0], []).append(departure)
+
+        # notices_query = """GET notices.* FROM notices
+        # WHERE notice_for IN %s"""
+
+    scheduled_stop_point_ids = []
+
+    for journey_id in departures_per_journey:
+        journey = departures_per_journey[journey_id]
+        if not journey_id in planned_journeys: continue
+
+        departure_time_parts = list(map(int, planned_journeys[journey_id]['StartingTime'].split(':')))
+        time_tracker = timestamp.replace(
+            hour=departure_time_parts[0],
+            minute=departure_time_parts[1],
+            second=departure_time_parts[2],
+        )
+
+        calls = []
+
+        for departure in journey:
+            index = departure[2]
+
+            if departure[1] is None:
+                runtime = departure[4]
+                waittime = departure[5]
+                if waittime: time_tracker += timedelta(seconds=waittime)
+                if runtime: time_tracker += timedelta(seconds=runtime)
+                continue
+
+            departure_data = {
+                'StopPoint':departure[1],
+                'AimedArrivalTime':None,
+                'AimedDepartureTime':None
+            }
+
+            scheduled_stop_point_ids.append(departure_data['StopPoint'])
+
+            boarding = departure[6] 
+            alighting = departure[7] 
+            if boarding is not None: departure_data['ForBoarding'] = boarding
+            if alighting is not None: departure_data['ForAlighting'] = alighting
+
+            if index != 0:
+                departure_data['AimedArrivalTime'] = time_tracker.isoformat()                    
+
+            runtime = departure[4]
+            waittime = departure[5]
+
+            if waittime: time_tracker += timedelta(seconds=waittime)
+
+            if index + 1 < len(journey):
+                departure_data['AimedDepartureTime'] = time_tracker.isoformat()
+
+            if runtime: time_tracker += timedelta(seconds=runtime)
+
+            # if len(calls) < index + 1:
+            #     print(f'{journey_id}: {str(index)} {str(len(calls))}')
+            calls.append(departure_data)
+
+        planned_journeys[journey_id]['Calls'] = calls
+
+        del planned_journeys[journey_id]['StartingTime']
+
+
+    notice_able_ids = set()
+    for journey_id in planned_journeys:
+        notice_able_ids = notice_able_ids.union((journey_id, planned_journeys[journey_id]['Line']))
+    for departure in departures:
+        index = 1
+        if user_stop_code: index == 8
+        notice_able_ids.add(departure[index])
+
+    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
+    notice_data = querying.query_all(cur, notices_query, (tuple(notice_able_ids),))
+    notices_per_id = {}
+    notices_per_for = {}
+    for notice_record in notice_data:
+        notice = dict(zip(
+            ('id','for','text'), notice_record
+        ))
+        notices_per_id[notice['id']] = notice['text']
+        for_list = notices_per_for.setdefault(notice['for'], [])
+        for_list.append(notice['id'])
+
+    return {
+        'scheduled_stop_point_ids':list(set(scheduled_stop_point_ids)),
+        'journeys':planned_journeys,
+        'notices':notices_per_id,
+        'notice_assignments':notices_per_for
+    }
+
 # Only Postgres support
-def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
+def getDepartures(stopplace, timestamp=None, secrets_file_path=None, user_stop_code=False):
     if not timestamp: timestamp = datetime.now()
 
     con = None
@@ -334,7 +545,7 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
         cur = con.cursor()
         querying = PostgresQuerying()
     else:
-        return None
+        return {'error':'database niet beschikbaar'}
     
     availabilities_query = """
     SELECT validity_conditions.*, availabilities_per_journey.journey FROM availabilities_per_journey
@@ -377,259 +588,81 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None):
 
 
     if len(journey_ids) == 0: 
-        print('Geen ritten')
-        return None
+        return {'error':'Geen ritten'}
     
+    return plannedJourneys(journey_ids, timestamp, con, cur, querying, user_stop_code=user_stop_code)
+    
+def getAvailableJourneys(journey_ids=[], journey_lines_codes=[], timestamp=None, secrets_file_path=None, user_stop_code=False):
+    if not timestamp: timestamp = datetime.now()
 
-    journeys_query = """
-    SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
-    journeys.pattern, lines.number AS line_number, lines.name AS "line_name", (
-		SELECT name FROM brandings WHERE brandings.id = lines.branding
-	) branding, 
-    lines.transport_mode, lines.transport_sub_mode, lines.public_code, (
-		SELECT name FROM authorities WHERE authorities.id = lines.authority
-	) authority, 
-    (
-		SELECT name FROM operators WHERE operators.id = lines.operator
-	) operator, (
-		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
-	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
-    COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.name, vehicle_types.short_name) AS vehicle, vehicle_types.length AS vehicle_length
-    FROM journeys
-    INNER JOIN (
-		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
-		LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
-	) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
-    INNER JOIN routes ON routes.id = patterns_and_displays.route
-    INNER JOIN lines ON lines.id = routes.line
-    LEFT JOIN rel_block_journey ON rel_block_journey.journey = journeys.id
-    LEFT JOIN blocks ON blocks.id = rel_block_journey.block
-    LEFT JOIN vehicle_types ON vehicle_types.id = COALESCE(journeys.vehicle_type, blocks.vehicle_type)
+    con = None
+    cur = None
+    querying = None
 
-    WHERE journeys.id IN %s
-    """
-
-    journey_ids = tuple(journey_ids)
-
-    journey_details = querying.query_all(cur, journeys_query, (journey_ids,))
-
-    planned_journeys = {}
-    scheduled_stop_points = {}
-
-    for journey in journey_details:
-        planned_journey = {
-            'Line':journey[0],
-            'LineCode':journey[1],
-            'Direction':journey[2],
-            'DatedVehicleJourney':journey[3],
-            'DatedVehicleJourneyCode':journey[4],
-            'JourneyPattern':journey[5],
-            'PublishedLineName':journey[6],
-            'LineName':journey[7],
-            'Branding':journey[8],
-            'TransportMode':journey[9],
-            'TransportSubMode':journey[10],
-            'LinePublicCode':journey[11],
-            'Authority':journey[12],
-            'Operator':journey[13],
-            'TypeOfProduct':journey[14],
-            'DestinationDisplay':journey[15],
-            # 'DestinationDisplayOnBus':{
-            #     'Front':journey[16],
-            #     'Side':journey[17]
-            # },
-            'StartingTime':journey[18],
-            'DataSourceCode':journey[19],
-            'Monitored':journey[20],
-            'Block':journey[21],
-            'VehicleType':journey[22],
-            'VehicleLength':journey[23],
-            'Calls':{},
-        }
-
-        if planned_journey['Monitored'] != False:
-            del planned_journey['Monitored']
-
-        planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
-
-    departures_query = """SELECT journeys.id AS "journey", stoppoint_information.id AS scheduled_stop_point, 
-    points_in_pattern.point_order AS "order", stoppoint_information.quay,
-    points_in_pattern.timing_point, (SELECT runtimes.time FROM runtimes
-    WHERE runtimes.time_demand_type = journeys.time_demand_type AND
-    runtimes.timing_link = points_in_pattern.timing_link
-    ) AS "runtime", 
-    (SELECT waittimes.time FROM waittimes WHERE
-    waittimes.time_demand_type = journeys.time_demand_type AND
-    (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
-    ) AS "waittime", stoppoint_information.stopplace,
-    stoppoint_information.public_code, stoppoint_information.direction, stoppoint_information.public_name, stoppoint_information.town,
-    COALESCE(points_in_pattern.for_boarding, stoppoint_information.for_boarding) for_boarding,
-    COALESCE(points_in_pattern.for_alighting, stoppoint_information.for_alighting) for_alighting, stoppoint_information.type
-    FROM journeys
-    INNER JOIN points_in_pattern ON points_in_pattern.pattern = journeys.pattern
-    LEFT JOIN (
-        SELECT scheduled_stop_points.id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, stopplaces.public_name, stopplaces.town,
-        scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding, stopplaces.type
-        FROM scheduled_stop_points
-        LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
-        LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
-        LEFT JOIN stopplaces ON stopplaces.id = rel_quay_stopplace.stopplace
-        LEFT JOIN quays ON quays.id = rel_quay_stopplace.quay
-    ) AS stoppoint_information ON stoppoint_information.id = points_in_pattern.stoppoint
-    WHERE journeys.id IN %s
-    ORDER BY journey, points_in_pattern.point_order
-    """               
-    departures = querying.query_all(cur, departures_query, (journey_ids,))
-    departures_per_journey = {}
-    for departure in departures: 
-        departures_per_journey.setdefault(departure[0], []).append(departure)
-
-        # notices_query = """GET notices.* FROM notices
-        # WHERE notice_for IN %s"""
-
-    for journey_id in departures_per_journey:
-        journey = departures_per_journey[journey_id]
-        if not journey_id in planned_journeys: continue
-
-        departure_time_parts = list(map(int, planned_journeys[journey_id]['StartingTime'].split(':')))
-        time_tracker = timestamp.replace(
-            hour=departure_time_parts[0],
-            minute=departure_time_parts[1],
-            second=departure_time_parts[2],
-        )
-
-        calls = []
-
-        for departure in journey:
-            index = departure[2]
-
-            if departure[1] is None:
-                runtime = departure[5]
-                waittime = departure[6]
-                if waittime: time_tracker += timedelta(seconds=waittime)
-                if runtime: time_tracker += timedelta(seconds=runtime)
-                continue
-
-            departure_data = {
-                'StopPoint':departure[1],
-                'AimedArrivalTime':None,
-                'AimedDepartureTime':None
-            }
-
-            boarding = departure[12]
-            alighting = departure[13]
-            if boarding is not None: departure_data['ForBoarding'] = boarding
-            if alighting is not None: departure_data['ForAlighting'] = alighting
-
-            if index != 0:
-                departure_data['AimedArrivalTime'] = time_tracker.isoformat()
-
-
-            if not departure_data['StopPoint'] in scheduled_stop_points:
-                stoppoint_data = {
-                    'Name':departure[10],
-                    'Town':departure[11],
-                    'Quay':departure[3],
-                    'StopPlace':departure[7],
-                }
-
-                if departure[8] is not None: stoppoint_data['PublicCode'] = departure[8]
-                if departure[9] is not None: stoppoint_data['Direction'] = departure[9]
-                
-                scheduled_stop_points[departure_data['StopPoint']] = stoppoint_data
-                    
-
-            runtime = departure[5]
-            waittime = departure[6]
-
-            if waittime: time_tracker += timedelta(seconds=waittime)
-
-            if index + 1 < len(journey):
-                departure_data['AimedDepartureTime'] = time_tracker.isoformat()
-
-            if runtime: time_tracker += timedelta(seconds=runtime)
-
-            # if len(calls) < index + 1:
-            #     print(f'{journey_id}: {str(index)} {str(len(calls))}')
-            calls.append(departure_data)
-
-        planned_journeys[journey_id]['Calls'] = calls
-
-        del planned_journeys[journey_id]['StartingTime']
-
-
-    notice_able_ids = set()
-    for journey_id in planned_journeys:
-        notice_able_ids = notice_able_ids.union((journey_id, planned_journeys[journey_id]['Line']))
-    for departure in departures:
-        notice_able_ids.add(departure[1])
-
-    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
-    notice_data = querying.query_all(cur, notices_query, (tuple(notice_able_ids),))
-    notices_per_id = {}
-    notices_per_for = {}
-    for notice_record in notice_data:
-        notice = dict(zip(
-            ('id','for','text'), notice_record
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return {'error':'database niet beschikbaar'}
+    
+    if journey_lines_codes and len(journey_lines_codes) > 0:
+        journeys_query = """
+        SELECT journeys.id FROM journeys
+        INNER JOIN patterns ON patterns.id = journeys.pattern
+        INNER JOIN routes ON routes.id = patterns.route
+        INNER JOIN lines ON lines.id = routes.line 
+        INNER JOIN UNNEST(%(lines)s, %(journey_numbers)s) AS t1(line, journey_number) ON
+        t1.line = lines.code AND t1.journey_number = journeys.number
+        """
+        lines, journey_numbers = map(list, zip(*journey_lines_codes))
+        ids_of_codes = list(map(
+            lambda x: x[0],
+            querying.query_all(cur, journeys_query, {
+                "lines":lines, "journey_numbers":journey_numbers
+            }, True)
         ))
-        notices_per_id[notice['id']] = notice['text']
-        for_list = notices_per_for.setdefault(notice['for'], [])
-        for_list.append(notice['id'])
+        journey_ids = journey_ids + ids_of_codes
+    
+    availabilities_query = """
+    SELECT validity_conditions.*, availabilities_per_journey.journey FROM availabilities_per_journey
+    INNER JOIN validity_conditions ON validity_conditions.id = availabilities_per_journey.availability
+    WHERE availabilities_per_journey.journey IN %s AND
+    is_available IS NOT FALSE AND
+    available_from <= %s AND available_through >= %s;
+    """
+    timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
 
-    stopplaces = tuple(map(lambda x: x['StopPlace'], scheduled_stop_points.values()))
-    interchanges_query = """
-    SELECT stopplace,
-    CASE
-        WHEN connections > 2 OR connections > (
-            SELECT COUNT(b.quay) FROM rel_quay_stopplace AS b
-            WHERE b.stopplace = stopplaces.id
-        ) THEN TRUE 
-        ELSE FALSE
-    END AS is_interchange,
-    CASE
-        WHEN stopplaces.type IN (
-            'busStation','metroStation','railStation','tramStation','combiMetroTram'
-        ) THEN TRUE 
-        ELSE FALSE
-    END AS is_station
-    FROM (
-        SELECT point_from AS stopplace, COUNT(DISTINCT stopplace_connections.point_to) AS connections FROM (
-            WITH stopplaces_in_pattern AS (
-            SELECT pattern, point_order, stopplace FROM points_in_pattern AS x
-            INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = x.stoppoint
-            INNER JOIN rel_quay_stopplace ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
-            )
-            SELECT stopplace AS point_from, lead(t1.stopplace) OVER (
-                PARTITION BY t1.pattern ORDER BY t1.point_order
-            ) AS point_to FROM stopplaces_in_pattern AS t1 WHERE pattern IN (
-                SELECT pattern FROM stopplaces_in_pattern WHERE stopplace IN %s
-            )
-        ) AS stopplace_connections WHERE point_from IN %s
-        GROUP BY stopplace_connections.point_from
-    )
-    LEFT JOIN stopplaces ON stopplaces.id = stopplace"""
-    interchanges_data = dict(list(map(
-        lambda x: (x[0], {
-            "Interchange":x[1],
-            "Station":x[2]
-        },),
-        querying.query_all(cur, interchanges_query, (stopplaces, stopplaces))
-    )))
+    availabilities = querying.query_all(cur, availabilities_query, (tuple(journey_ids), timestamp, timestamp))
 
 
-    for scheduled_stop_point in scheduled_stop_points:
-        if scheduled_stop_points[scheduled_stop_point]['StopPlace'] in interchanges_data:
-            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Interchange'] == True:
-                scheduled_stop_points[scheduled_stop_point]['Interchange'] = True
-            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Station'] == True:
-                scheduled_stop_points[scheduled_stop_point]['Station'] = True
+    journey_ids = []
 
-    return {
-        'scheduled_stop_points':scheduled_stop_points,
-        'journeys':planned_journeys,
-        'notices':notices_per_id,
-        'notice_assignments':notices_per_for
-    }
+    for availability in availabilities:
+        period = {
+            'from':availability[1],
+            'through':availability[2],
+            'bits':availability[3],
+            'is_available':availability[4]
+        }
+        if not period['from'] or not period['through']: continue
+        if not period['from'].tzinfo: period['from'] = period['from'].replace(tzinfo=tz)
+        if not period['through'].tzinfo: period['through'] = period['through'].replace(tzinfo=tz)
+
+        journey_id = availability[5]
+
+        diff = (timestamp - period['from']).days
+
+        if period['bits'][diff] == '1':
+            journey_ids.append(journey_id)
+
+
+    if len(journey_ids) == 0: 
+        return {'error':'Geen ritten'}
+    
+    return plannedJourneys(journey_ids, timestamp, con, cur, querying, user_stop_code=user_stop_code)
+
 
 
 def getStopplaces(secrets_file_path=None):
