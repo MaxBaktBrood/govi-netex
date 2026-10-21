@@ -53,7 +53,7 @@ class Netex(NetexDefaults):
             general = compositeFrame.find('./n:frames/n:GeneralFrame', self.ns)
             resource = compositeFrame.find('./n:frames/n:ResourceFrame', self.ns)
             service = compositeFrame.find('./n:frames/n:ServiceFrame', self.ns)
-            timetable = compositeFrame.find('./n:frames/n:TimetableFrame', self.ns)
+            timetables = compositeFrame.findall('./n:frames/n:TimetableFrame', self.ns)
             serviceCalendar = compositeFrame.find('./n:frames/n:ServiceCalendarFrame', self.ns)
             vehicleSchedule = compositeFrame.find('./n:frames/n:VehicleScheduleFrame', self.ns)
             site = compositeFrame.find('./n:frames/n:SiteFrame', self.ns)
@@ -115,11 +115,11 @@ class Netex(NetexDefaults):
             #     continue
 
             if service is not None:
-                self.rotues = processer.craftRoutes(service=service, resource=resource, timetable=timetable, site=site)
+                self.rotues = processer.craftRoutes(service=service, resource=resource, site=site)
                 processer.getNotices(service=service)
 
-            if timetable is not None and service is not None:
-                self.journeys = processer.craftJourneys(service=service, timetable=timetable, vehicleSchedule=vehicleSchedule)
+            if timetables is not None and service is not None:
+                self.journeys = processer.craftJourneys(service=service, timetables=timetables, vehicleSchedule=vehicleSchedule)
 
             if resource is not None:
                 self.vehicles = processer.craftVehicleInfo(resource=resource)

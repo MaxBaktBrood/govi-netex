@@ -1089,7 +1089,7 @@ class NetexNL(NetexBase):
 
         self.to_db('types_of_service', TypeOfService, types_of_service) 
 
-    def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, timetable:Optional[ET.Element]=None, general_frame=None, site=None):
+    def craftRoutes(self, service:ET.Element, resource:Optional[ET.Element]=None, general_frame=None, site=None):
         if resource is not None:
             self.get_datasource(resource)
             self.get_brandings(resource)
@@ -1111,7 +1111,7 @@ class NetexNL(NetexBase):
             self.site_enum(site)   
 
     
-    def craftJourneys(self, service:ET.Element, timetable:ET.Element, vehicleSchedule:ET.Element=None):
+    def craftJourneys(self, service:ET.Element, timetables:list[ET.Element], vehicleSchedule:ET.Element=None):
 
         if service is not None:
             self.get_run_waittimes(service)
@@ -1124,9 +1124,10 @@ class NetexNL(NetexBase):
             self.get_stop_areas(service)
             self.get_destination_displays(service)
         
-        if timetable is not None:
-            self.get_validity_conditions(timetable)
-            self.get_journeys(timetable)  
+        if timetables is not None:
+            for timetable in timetables:
+                self.get_validity_conditions(timetable)
+                self.get_journeys(timetable)  
 
         if vehicleSchedule is not None:
             self.get_blocks(vehicleSchedule) 
