@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, TimingPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, TimingPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice, NoticeAssingment
 
 
 class NetexBase:
@@ -36,8 +36,8 @@ class NetexBase:
             case 'points_in_pattern':
                 self.cur.execute('CREATE INDEX IF NOT EXISTS idx_points_in_pattern ON points_in_pattern(pattern, point_order);')
                 self.con.commit()
-            case 'notices':
-                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_notices ON notices(notice_for);')
+            case 'notice_assignments':
+                self.cur.execute('CREATE INDEX IF NOT EXISTS idx_notice_assingments ON notice_assignments(notice_for);')
                 self.con.commit()
 
     def to_sqlite(self, name, dataclass, data={}):
@@ -834,6 +834,14 @@ class NetexNL(NetexBase):
                 if realtime_info_el is not None: 
                     journey_data.monitored = (realtime_info_el.text == 'true')
 
+            print_el = journey.find(f'./n:Print', self.ns)
+            if print_el is not None: 
+                journey_data.print = (print_el.text == 'true')
+            
+            dynamic_el = journey.find(f'./n:Dynamic', self.ns)
+            if dynamic_el is not None: 
+                journey_data.show_dynamic = dynamic_el.text
+
 
             journeys[journey_data.id] = journey_data
         
@@ -1029,25 +1037,40 @@ class NetexNL(NetexBase):
         if notices is None or notice_assignments is None: return
 
         processed_notices: dict[str, Notice] = {}
-        
+
+
+        for notice_el in notices.findall('./n:Notice', self.ns):
+
+            notice_data = Notice(notice_el.attrib['id'])
+
+            notice_name_el = notice_el.find(f'./n:Name',self.ns)
+            if notice_name_el is not None:
+                notice_data.name = notice_name_el.text
+
+            notice_text_el = notice_el.find(f'./n:Text',self.ns)
+            if notice_text_el is not None: 
+                notice_data.text = notice_text_el.text
+
+            processed_notices[notice_data.id] = notice_data
+
+        self.to_db('notices', Notice, processed_notices)
+
+        assignments: list[NoticeAssingment] = []
+
         for assignment in notice_assignments.findall('./*', self.ns):
             notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
             if notice_for_el is None or 'ref' not in notice_for_el.attrib: continue
             notice_for = notice_for_el.attrib['ref']
 
-            # if only_used and notice_for not in self.notice_able_ids: continue
-
             notice_id_el = assignment.find('./n:NoticeRef', self.ns)
             if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
             notice_id = notice_id_el.attrib['ref']
 
-            notice_text_el = notices.find(f'./n:Notice[@id="{notice_id}"]/n:Text',self.ns)
-            if notice_text_el is None: continue
-            notice_text = notice_text_el.text
-
-            processed_notices[notice_id] = Notice(notice_id, notice_for, notice_text)
+            assignments.append(NoticeAssingment(notice_id, notice_for))
             
-        self.to_db('notices', Notice, processed_notices) 
+        self.to_db('notice_assignments', NoticeAssingment, dict(
+            (str(i), x) for i, x in enumerate(assignments)
+        )) 
 
     def get_areas(self, general:ET.Element):
 

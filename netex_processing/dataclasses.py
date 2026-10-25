@@ -175,6 +175,8 @@ class Journey:
     vehicle_type: Optional[str] = None
     starting_time: Optional[str] = None
     time_demand_type: Optional[str] = None
+    print: Optional[bool] = None
+    show_dynamic: Optional[str] = None
 
 @dataclass
 class AvailabilityPerJourney:
@@ -218,8 +220,13 @@ class DestinationDisplay:
 @dataclass
 class Notice:
     id: str
+    name: Optional[str] = None
+    text: str = None
+
+@dataclass
+class NoticeAssingment:
+    notice: str
     notice_for: str
-    text: str
 
 @dataclass
 class VehicleType:
