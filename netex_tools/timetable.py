@@ -780,7 +780,7 @@ def getStopplaces(secrets_file_path=None):
 
     return summarized_stopplaces
             
-def getStoppointsPerStopplace(stopplace, secrets_file_path=None):
+def getStoppointsPerStopplace(stopplace, secrets_file_path=None,  user_stop_code=False):
     con = None
     cur = None
     querying = None
@@ -793,8 +793,11 @@ def getStoppointsPerStopplace(stopplace, secrets_file_path=None):
     else:
         return None
     
+    id_part = "scheduled_stop_points.id"
+    if user_stop_code:
+        id_part = "scheduled_stop_points.datasource_code||':'||scheduled_stop_points.code AS id"    
 
-    quay_query = """SELECT scheduled_stop_points.id, scheduled_stop_points.name, stop_areas.public_code, stop_areas.private_code, stop_areas.name AS stop_area_name, stop_areas.place_name, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
+    quay_query = f"""SELECT {id_part}, scheduled_stop_points.name, stop_areas.public_code, stop_areas.private_code, stop_areas.name AS stop_area_name, stop_areas.place_name, rel_stoppoint_quaycode.quay, rel_quay_stopplace.stopplace FROM scheduled_stop_points
     INNER JOIN stop_areas ON stop_areas.id = scheduled_stop_points.stop_area
     INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
     INNER JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
@@ -818,6 +821,217 @@ def getStoppointsPerStopplace(stopplace, secrets_file_path=None):
     
     return stoppoins_per_id
 
+def getStoppoints(stoppoint_ids=[], secrets_file_path=None, user_stop_code=False):
+    stoppoint_ids = tuple(stoppoint_ids)
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return None
+    
+    id_part = "scheduled_stop_points.id"
+    if user_stop_code:
+        id_part = "scheduled_stop_points.datasource_code||':'||scheduled_stop_points.code"    
+
+    quay_query = f"""SELECT {id_part} AS id, quays.id AS quay, quays.public_code, quays.direction, stopplaces.id AS stopplace, 
+        COALESCE(stopplaces.public_name, stopplaces.name, scheduled_stop_points.name) public_name, stopplaces.town,
+        scheduled_stop_points.for_alighting, scheduled_stop_points.for_boarding, stopplaces.type
+        FROM scheduled_stop_points
+        LEFT JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = scheduled_stop_points.id
+        LEFT JOIN rel_quay_stopplace ON rel_quay_stopplace.quay = rel_stoppoint_quaycode.quay
+        LEFT JOIN stopplaces ON stopplaces.id = rel_quay_stopplace.stopplace
+        LEFT JOIN quays ON quays.id = rel_quay_stopplace.quay
+    WHERE {id_part} IN %s;
+    """
+    quays = list(map(
+        lambda x: dict(zip(
+            ("id", "quay","public_code","direction","stopplace","public_name","town","for_alighting","for_boarding","type","stopplace_name","stoppoint_name"),
+            x
+        )),
+        querying.query_all(cur, quay_query, (stoppoint_ids,))
+    ))
+
+    scheduled_stop_points = {}
+    for quay in quays:
+        stoppoint_data = scheduled_stop_points.setdefault(quay['id'], {
+            'Name':quay['public_name'],
+            'Town':quay['town'],
+            'Quay':quay['quay'],
+            'StopPlace':quay['stopplace']
+        })
+
+        if quay['public_code'] is not None: stoppoint_data['PublicCode'] = quay['public_code']
+        if quay['direction'] is not None: stoppoint_data['Direction'] = quay['direction']
+        if quay['for_boarding'] is not None: stoppoint_data['ForBoarding'] = quay['for_boarding']
+        if quay['for_alighting'] is not None: stoppoint_data['ForAlighting'] = quay['for_alighting']
+
+    stopplaces = tuple(map(lambda x: x['StopPlace'], scheduled_stop_points.values()))
+    interchanges_query = """
+    SELECT stopplace,
+    CASE
+        WHEN connections > 2 OR connections > (
+            SELECT COUNT(b.quay) FROM rel_quay_stopplace AS b
+            WHERE b.stopplace = stopplaces.id
+        ) THEN TRUE 
+        ELSE FALSE
+    END AS is_interchange,
+    CASE
+        WHEN stopplaces.type IN (
+            'busStation','metroStation','railStation','tramStation','combiMetroTram'
+        ) THEN TRUE 
+        ELSE FALSE
+    END AS is_station
+    FROM (
+        SELECT point_from AS stopplace, COUNT(DISTINCT stopplace_connections.point_to) AS connections FROM (
+            WITH stopplaces_in_pattern AS (
+            SELECT pattern, point_order, stopplace FROM points_in_pattern AS x
+            INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = x.stoppoint
+            INNER JOIN rel_quay_stopplace ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+            )
+            SELECT stopplace AS point_from, lead(t1.stopplace) OVER (
+                PARTITION BY t1.pattern ORDER BY t1.point_order
+            ) AS point_to FROM stopplaces_in_pattern AS t1 WHERE pattern IN (
+                SELECT pattern FROM stopplaces_in_pattern WHERE stopplace IN %s
+            )
+        ) AS stopplace_connections WHERE point_from IN %s
+        GROUP BY stopplace_connections.point_from
+    )
+    LEFT JOIN stopplaces ON stopplaces.id = stopplace"""
+    interchanges_data = dict(list(map(
+        lambda x: (x[0], {
+            "Interchange":x[1],
+            "Station":x[2]
+        },),
+        querying.query_all(cur, interchanges_query, (stopplaces, stopplaces))
+    )))
+
+
+    for scheduled_stop_point in scheduled_stop_points:
+        if scheduled_stop_points[scheduled_stop_point]['StopPlace'] in interchanges_data:
+            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Interchange'] == True:
+                scheduled_stop_points[scheduled_stop_point]['Interchange'] = True
+            if interchanges_data[scheduled_stop_points[scheduled_stop_point]['StopPlace']]['Station'] == True:
+                scheduled_stop_points[scheduled_stop_point]['Station'] = True
+
+    notices_query = """
+    SELECT notices.id AS id, t1.notice_for AS for, notices.text AS text FROM (
+        SELECT notice, notice_for FROM notice_assignments WHERE notice_for IN %s
+    ) AS t1
+    INNER JOIN notices ON notices.id = t1.notice"""
+    notice_data = querying.query_all(cur, notices_query, (stoppoint_ids,))
+    notices_per_id = {}
+    notices_per_for = {}
+    for notice_record in notice_data:
+        notice = dict(zip(
+            ('id','for','text'), notice_record
+        ))
+        notices_per_id[notice['id']] = notice['text']
+        for_list = notices_per_for.setdefault(notice['for'], [])
+        for_list.append(notice['id'])
+    
+    return {
+        'scheduled_stop_points':scheduled_stop_points,
+        'notices':notices_per_id,
+        'notice_assignments':notices_per_for
+    }
+
+def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
+    # search = {
+    #     'journey_number':'',
+    #     'carrier':None,
+    #     'line_code':None,
+    #     'line_number':None,
+    #     'block_number':None
+    # }
+
+    con = None
+    cur = None
+    querying = None
+
+    postgres_con = get_pg_con(secrets_file_path=secrets_file_path)
+    if postgres_con is not None: 
+        con = postgres_con[0]
+        cur = con.cursor()
+        querying = PostgresQuerying()
+    else:
+        return {'error':'database niet beschikbaar'}
+
+    journey_ids = []
+    block_ids = []
+
+    for search in searches:
+        # if not search['journey_number']: continue
+
+        query_filters = []
+        query_parameters = []
+
+        if 'block_number' in search and search['carrier']:
+            if get_whole_blocks: 
+                block_ids.append(search['block_number'])
+                continue
+
+            query_filters.append(
+                "LOWER(block_number) = %s"
+            )
+            query_parameters.append(search['block_number'])
+        if 'journey_number' in search and search['journey_number']:
+            query_filters.append(
+                "number = %s"
+            )
+            query_parameters.append(search['journey_number'].lower())
+        if 'carrier' in search and search['carrier']:
+            query_filters.append(
+                "LOWER(datasource_name) = %s"
+            )
+            query_parameters.append(search['carrier'].lower())
+        if 'line_code' in search and search['line_code']:
+            query_filters.append(
+                "LOWER(line_code) = %s"
+            )
+            query_parameters.append(search['line_code'].lower())
+        if 'line_number' in search and search['line_number']:
+            query_filters.append(
+                "LOWER(line_number) = %s"
+            )
+            query_parameters.append(search['line_number'].lower())
+        
+        if len(query_filters) == 0: continue
+    
+        search_query = f"""
+        WITH blocks_per_journey AS (
+            SELECT journeys.id, journeys.number, datasources.code AS datasource_code, datasources.name AS datasource_name, lines.code AS line_code, lines.number AS line_number, 
+              block_info.block_number, block_info.block_id FROM journeys
+            INNER JOIN (
+                SELECT blocks.private_code AS block_number, blocks.id AS block_id, rel_block_journey.journey FROM blocks
+                INNER JOIN rel_block_journey ON rel_block_journey.block = blocks.id 
+            ) AS block_info ON block_info.journey = journeys.id
+            INNER JOIN patterns ON patterns.id = journeys.pattern
+            INNER JOIN routes ON routes.id = patterns.route
+            INNER JOIN lines ON lines.id = routes.line
+            INNER JOIN datasources ON datasources.id = lines.datasource_code
+        )
+        SELECT id, block_id FROM blocks_per_journey
+        WHERE {" AND ".join(query_filters)}
+        """
+
+        for row in querying.query_all(cur, search_query, tuple(query_parameters)):
+            journey_ids.append(row[0])
+            if get_whole_blocks:
+                block_ids.append(row[1])
+    
+    if len(block_ids) > 0:
+        block_query = "SELECT journey FROM rel_block_journey WHERE rel_block_journey.block IN %s"
+        
+        for row in querying.query_all(cur, block_query, (tuple(block_ids),)):
+            journey_ids.append(row[0])
+    
+    return list(set(journey_ids))
 
 
 
