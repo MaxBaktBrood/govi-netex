@@ -424,10 +424,12 @@ class NetexJSON:
                 index_count = quay_direction_orders.setdefault(index, 0)
                 quay_direction_orders[index] += 1
 
-                
+                departure_notes = dict(cur.execute("""
+                SELECT notices.id AS id, t1.notice_for AS for, notices.text AS text FROM (
+                    SELECT notice, notice_for FROM notice_assingments WHERE notice_for IN %s
+                ) AS t1
+                INNER JOIN notices ON notices.id = t1.notice""", ((departure['pattern_point_id'], departure['scheduled_point_id']),)).fetchall())
 
-                departure_notes = dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['pattern_point_id'],)).fetchall()
-                ) | dict(cur.execute("SELECT id, content FROM notices WHERE note_for = ?", (departure['scheduled_point_id'],)).fetchall())
                 entry['notes'] = entry['notes'] | departure_notes
 
                 departure_info = {

@@ -195,7 +195,11 @@ WHERE lines.id = %s ORDER BY journey, point_order;
         departure_data
     ))
 
-    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
+    notices_query = """
+    SELECT notices.id AS id, t1.notice_for AS for, notices.text AS text FROM (
+        SELECT notice, notice_for FROM notice_assignments WHERE notice_for IN %s
+    ) AS t1
+    INNER JOIN notices ON notices.id = t1.notice"""
     notice_data = querying.query_all(cur, notices_query, 
         (tuple(
             [line['id']] + 
@@ -512,7 +516,11 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
         if user_stop_code: index == 8
         notice_able_ids.add(departure[index])
 
-    notices_query = "SELECT * FROM notices WHERE notice_for IN %s"
+    notices_query = """
+    SELECT notices.id AS id, t1.notice_for AS for, notices.text AS text FROM (
+        SELECT notice, notice_for FROM notice_assignments WHERE notice_for IN %s
+    ) AS t1
+    INNER JOIN notices ON notices.id = t1.notice"""
     notice_data = querying.query_all(cur, notices_query, (tuple(notice_able_ids),))
     notices_per_id = {}
     notices_per_for = {}
