@@ -842,6 +842,12 @@ class NetexNL(NetexBase):
             if dynamic_el is not None: 
                 journey_data.show_dynamic = dynamic_el.text
 
+            if journey_data.print == False or (
+                journey_data.show_dynamic != None and
+                journey_data.show_dynamic != 'always'
+            ):
+                continue
+
 
             journeys[journey_data.id] = journey_data
         
