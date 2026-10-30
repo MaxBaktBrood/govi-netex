@@ -964,6 +964,7 @@ def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
 
     journey_ids = []
     block_ids = []
+    block_numbers = []
 
     for search in searches:
         # if not search['journey_number']: continue
@@ -971,13 +972,13 @@ def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
         query_filters = []
         query_parameters = []
 
-        if 'block_number' in search and search['carrier']:
+        if 'block_number' in search and search['block_number']:
             if get_whole_blocks: 
-                block_ids.append(search['block_number'])
+                block_numbers.append(search['block_number'])
                 continue
 
             query_filters.append(
-                "LOWER(block_number) = %s"
+                "block_number = %s"
             )
             query_parameters.append(search['block_number'])
         if 'journey_number' in search and search['journey_number']:
@@ -987,9 +988,9 @@ def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
             query_parameters.append(search['journey_number'].lower())
         if 'carrier' in search and search['carrier']:
             query_filters.append(
-                "LOWER(datasource_name) = %s"
+                "(LOWER(datasource_name) = %s OR LOWER(datasource_code) = %s)"
             )
-            query_parameters.append(search['carrier'].lower())
+            query_parameters.extend([search['carrier'].lower()] * 2)
         if 'line_code' in search and search['line_code']:
             query_filters.append(
                 "LOWER(line_code) = %s"
@@ -1027,6 +1028,14 @@ def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
     
     if len(block_ids) > 0:
         block_query = "SELECT journey FROM rel_block_journey WHERE rel_block_journey.block IN %s"
+        
+        for row in querying.query_all(cur, block_query, (tuple(block_ids),)):
+            journey_ids.append(row[0])
+    
+    if len(block_numbers) > 0:
+        block_query = """
+        SELECT journey FROM rel_block_journey WHERE blocks.private_code IN %s
+        INNER JOIN blocks ON blocks.id = rel_block_journey.block"""
         
         for row in querying.query_all(cur, block_query, (tuple(block_ids),)):
             journey_ids.append(row[0])
