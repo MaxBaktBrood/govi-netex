@@ -344,36 +344,53 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
             querying = SQLiteQuerying()
     
     journeys_query = """
+    WITH selected_journeys AS (
+        SELECT * FROM journeys WHERE journeys.id IN %s
+        AND in_scope_of_operator IS NOT FALSE
+    ),
+    journey_blocks AS (
+        SELECT selected_blocks.* FROM (
+            SELECT rel_block_journey.* FROM rel_block_journey WHERE journey IN (SELECT id FROM selected_journeys)
+        ) selected_blocks
+        INNER JOIN availabilities_per_block ON availabilities_per_block.block = selected_blocks.block
+        LEFT JOIN (
+            SELECT id, SUBSTRING(bits FROM CAST(
+                EXTRACT(DAY FROM %s - available_from) AS INTEGER
+            ) + 1 FOR 1) AS availability_bit FROM validity_conditions
+            WHERE is_available IS NOT FALSE
+            AND available_from <= %s 
+            AND available_through >= %s
+        ) AS valid_validities ON valid_validities.id = availabilities_per_block.availability
+        WHERE availability_bit != '0'
+    )
     SELECT lines.id AS line_id, lines.code AS line_code, routes.direction, journeys.id, journeys.number,
     journeys.pattern, lines.number AS line_number, lines.name AS "line_name", (
-		SELECT name FROM brandings WHERE brandings.id = lines.branding
-	) branding, 
+        SELECT name FROM brandings WHERE brandings.id = lines.branding
+    ) branding, 
     lines.transport_mode, lines.transport_sub_mode, lines.public_code, (
-		SELECT name FROM authorities WHERE authorities.id = lines.authority
-	) authority, 
+        SELECT name FROM authorities WHERE authorities.id = lines.authority
+    ) authority, 
     (
-		SELECT name FROM operators WHERE operators.id = lines.operator
-	) operator, (
-		SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
-	) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
+        SELECT name FROM operators WHERE operators.id = lines.operator
+    ) operator, (
+        SELECT name FROM product_types WHERE product_types.id = lines.type_of_product
+    ) type_of_product, patterns_and_displays.name, patterns_and_displays.front, patterns_and_displays.side, journeys.starting_time, (SELECT code FROM datasources WHERE datasources.id = lines.datasource_code) datasource,
     COALESCE(journeys.monitored, lines.monitored) AS monitored, blocks.private_code AS block, COALESCE(vehicle_types.name, vehicle_types.short_name) AS vehicle, vehicle_types.length AS vehicle_length
-    FROM journeys
+    FROM selected_journeys AS journeys
     INNER JOIN (
-		SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
-		LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
-	) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
+        SELECT patterns.id AS pattern_id, patterns.route, destination_displays.* FROM patterns
+        LEFT JOIN destination_displays ON destination_displays.id = patterns.destination_display
+    ) AS patterns_and_displays ON patterns_and_displays.pattern_id = journeys.pattern
     INNER JOIN routes ON routes.id = patterns_and_displays.route
     INNER JOIN lines ON lines.id = routes.line
-    LEFT JOIN rel_block_journey ON rel_block_journey.journey = journeys.id
-    LEFT JOIN blocks ON blocks.id = rel_block_journey.block
+    LEFT JOIN journey_blocks ON journey_blocks.journey = journeys.id
+    LEFT JOIN blocks ON blocks.id = journey_blocks.block
     LEFT JOIN vehicle_types ON vehicle_types.id = COALESCE(journeys.vehicle_type, blocks.vehicle_type)
-
-    WHERE journeys.id IN %s
     """
 
     journey_ids = tuple(journey_ids)
 
-    journey_details = querying.query_all(cur, journeys_query, (journey_ids,))
+    journey_details = querying.query_all(cur, journeys_query, (journey_ids, timestamp, timestamp, timestamp))
 
     planned_journeys = {}
 
@@ -411,6 +428,15 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
         if planned_journey['Monitored'] != False:
             del planned_journey['Monitored']
 
+        for property in [
+            'Branding','TransportSubMode',
+            'LinePublicCode','Authority',
+            'TypeOfProduct','Block',
+            'VehicleType','VehicleLength'
+        ]: 
+            if planned_journey[property] is None: del planned_journey[property]
+
+
         planned_journeys[planned_journey['DatedVehicleJourney']] = planned_journey
 
     stoppoint_part = "points_in_pattern.stoppoint AS scheduled_stop_point"
@@ -433,7 +459,10 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
     (waittimes.scheduled_stop_point = points_in_pattern.stoppoint OR waittimes.timing_point = points_in_pattern.timing_point)
     ) AS "waittime",
     points_in_pattern.for_boarding,
-    points_in_pattern.for_alighting
+    points_in_pattern.for_alighting,
+    (SELECT name FROM destination_displays 
+        WHERE destination_displays.id = points_in_pattern.destination_display
+    )    
     {stoppoint_end_query}
     FROM journeys
     INNER JOIN points_in_pattern ON points_in_pattern.pattern = journeys.pattern
@@ -485,6 +514,10 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
             alighting = departure[7] 
             if boarding is not None: departure_data['ForBoarding'] = boarding
             if alighting is not None: departure_data['ForAlighting'] = alighting
+
+            destination_display = departure[8]
+            if destination_display is not None:
+                departure_data['destination_display'] = destination_display
 
             if index != 0:
                 departure_data['AimedArrivalTime'] = time_tracker.isoformat()                    
@@ -556,43 +589,33 @@ def getDepartures(stopplace, timestamp=None, secrets_file_path=None, user_stop_c
         return {'error':'database niet beschikbaar'}
     
     availabilities_query = """
-    SELECT validity_conditions.*, availabilities_per_journey.journey FROM availabilities_per_journey
+    SELECT journey FROM (
+        SELECT availabilities_per_journey.* FROM availabilities_per_journey
+        INNER JOIN (
+            SELECT journeys.id AS journey,  stopplace, rel_quay_stopplace.quay FROM rel_quay_stopplace
+            INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
+            INNER JOIN points_in_pattern ON points_in_pattern.stoppoint = rel_stoppoint_quaycode.id
+            INNER JOIN patterns ON patterns.id = points_in_pattern.pattern
+            INNER JOIN journeys ON journeys.pattern = patterns.id
+        ) AS locations ON locations.journey = availabilities_per_journey.journey
+        WHERE locations.stopplace = %s
+    ) journey_availabilities
     INNER JOIN (
-	SELECT journeys.id AS journey,  stopplace, rel_quay_stopplace.quay FROM rel_quay_stopplace
-	INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.quay = rel_quay_stopplace.quay
-	INNER JOIN points_in_pattern ON points_in_pattern.stoppoint = rel_stoppoint_quaycode.id
-	INNER JOIN patterns ON patterns.id = points_in_pattern.pattern
-	INNER JOIN journeys ON journeys.pattern = patterns.id
-    ) AS locations ON locations.journey = availabilities_per_journey.journey
-    INNER JOIN validity_conditions ON validity_conditions.id = availabilities_per_journey.availability
-    WHERE locations.stopplace = %s AND
-    is_available IS NOT FALSE AND
-    available_from <= %s AND available_through >= %s;
+        SELECT id FROM validity_conditions
+        WHERE is_available IS NOT FALSE
+        AND available_from <= %s 
+        AND available_through >= %s
+        AND SUBSTRING(bits FROM CAST(
+            EXTRACT(DAY FROM %s - available_from) AS INTEGER
+        ) + 1 FOR 1) = '1'
+    ) AS valid_validities ON valid_validities.id = journey_availabilities.availability
     """
     timestamp = timestamp.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
 
-    availabilities = querying.query_all(cur, availabilities_query, (stopplace, timestamp, timestamp))
-
-
-    journey_ids = []
-
-    for availability in availabilities:
-        period = {
-            'from':availability[1],
-            'through':availability[2],
-            'bits':availability[3],
-            'is_available':availability[4]
-        }
-        if not period['from'] or not period['through']: continue
-        if not period['from'].tzinfo: period['from'] = period['from'].replace(tzinfo=tz)
-        if not period['through'].tzinfo: period['through'] = period['through'].replace(tzinfo=tz)
-
-        journey_id = availability[5]
-
-        diff = (timestamp - period['from']).days
-
-        if period['bits'][diff] == '1':
-            journey_ids.append(journey_id)
+    journey_ids = list(map(
+        lambda x: x[0],
+        querying.query_all(cur, availabilities_query, (stopplace, timestamp, timestamp, timestamp))
+    ))
 
 
     if len(journey_ids) == 0: 

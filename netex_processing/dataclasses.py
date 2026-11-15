@@ -227,6 +227,7 @@ class Notice:
 class NoticeAssingment:
     notice: str
     notice_for: str
+    noticed_object: str
 
 @dataclass
 class VehicleType:
@@ -260,3 +261,8 @@ class Block:
 class RelBlockJourney:
     block: str
     journey: str
+
+@dataclass
+class RelBlockAvailability:
+    block: str
+    availability: str

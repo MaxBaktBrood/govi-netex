@@ -6,7 +6,7 @@ import isodate
 import sqlite3
 import psycopg2
 from dataclasses import dataclass, fields, astuple, asdict
-from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, TimingPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice, NoticeAssingment
+from netex_processing.dataclasses import Branding, ProductType, Operator, Authority, Area, RelResponsibilityArea, Line, Route, RelPointRoute, Routepoint, Routelink, Datasource, Runtime, Waittime, TimingLink, RelTimingRoutePoint, Pattern, PointInPattern, ScheduledStopPoint, TimingPoint, StopArea, AvailabilityCondition, Journey, AvailabilityPerJourney, RelStoppointQuaycode, RelQuayStopplace, Stopplace, Quay, DestinationDisplay, VehicleType, Vehicle, Block, RelBlockJourney, Notice, NoticeAssingment, RelBlockAvailability
 
 
 class NetexBase:
@@ -1010,6 +1010,7 @@ class NetexNL(NetexBase):
     def get_blocks(self, vehicleSchedule:ET.Element):
         blocks: dict[str, Block] = {}
         rel_block_journey: list[RelBlockJourney] = []
+        availabilities_per_block: list[RelBlockAvailability] = []
 
         for block_el in vehicleSchedule.findall(f"./n:blocks/n:Block", self.ns):
             block_data = Block(block_el.attrib['id'])
@@ -1020,6 +1021,14 @@ class NetexNL(NetexBase):
             vehicle_type_el = block_el.find('./n:VehicleTypeRef', self.ns)
             if vehicle_type_el is not None and 'ref' in vehicle_type_el.attrib:
                 block_data.vehicle_type = vehicle_type_el.attrib['ref']
+
+            if block_el.find('./n:validityConditions', self.ns) is not None:
+                refs = block_el.findall('./n:validityConditions/n:AvailabilityConditionRef', self.ns)
+                for ref in refs:
+                    if 'ref' in ref.attrib:
+                        availabilities_per_block.append(
+                            AvailabilityPerJourney(block_data.id, ref.attrib['ref'])
+                        )
 
             blocks[block_data.id] = block_data
 
@@ -1033,6 +1042,9 @@ class NetexNL(NetexBase):
         self.to_db('blocks', Block, blocks)
         self.to_db('rel_block_journey', RelBlockJourney, dict(
             (str(i), x) for i, x in enumerate(rel_block_journey)
+        ))
+        self.to_db('availabilities_per_block', RelBlockAvailability, dict(
+            (str(i), x) for i, x in enumerate(availabilities_per_block)
         ))
 
     def getNotices(self, service:ET.Element, #only_used=True
@@ -1065,14 +1077,15 @@ class NetexNL(NetexBase):
 
         for assignment in notice_assignments.findall('./*', self.ns):
             notice_for_el = assignment.find('./n:NoticedObjectRef', self.ns)
-            if notice_for_el is None or 'ref' not in notice_for_el.attrib: continue
+            if notice_for_el is None or 'ref' not in notice_for_el.attrib or 'nameOfRefClass' not in notice_for_el.attrib: continue
             notice_for = notice_for_el.attrib['ref']
+            noticed_object = notice_for_el.attrib['nameOfRefClass']
 
             notice_id_el = assignment.find('./n:NoticeRef', self.ns)
             if notice_id_el is None or 'ref' not in notice_id_el.attrib: continue
             notice_id = notice_id_el.attrib['ref']
 
-            assignments.append(NoticeAssingment(notice_id, notice_for))
+            assignments.append(NoticeAssingment(notice_id, notice_for, noticed_object))
             
         self.to_db('notice_assignments', NoticeAssingment, dict(
             (str(i), x) for i, x in enumerate(assignments)
