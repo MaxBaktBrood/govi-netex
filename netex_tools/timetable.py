@@ -105,7 +105,7 @@ lines.id = %s;
     """
     journey_query = """
 SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id AS "line_id", routes.direction, 
-    lines.name AS "line_name", lines.number AS "line_number", COALESCE(journeys.monitored, lines.monitored) AS monitored, starting_time, time_demand_type  FROM journeys
+    lines.name AS "line_name", lines.number AS "line_number", COALESCE(journeys.monitored, lines.monitored) AS monitored, starting_time, time_demand_type FROM journeys
     INNER JOIN patterns ON patterns.id = pattern
     INNER JOIN routes ON routes.id = patterns.route
     INNER JOIN lines ON lines.id = routes.line
@@ -119,28 +119,55 @@ SELECT journeys.id, journeys.number, pattern,routes.id AS "route_id", lines.id A
             availability_available_part = "AND validity_conditions.is_available IS FALSE"
         else: availability_available_part = ""
     availabilities_query = f"""
-SELECT validity_conditions.* FROM validity_conditions 
-    INNER JOIN availabilities_per_journey ON availabilities_per_journey.availability = validity_conditions.id
-    INNER JOIN journeys ON availabilities_per_journey.journey = journeys.id
-    WHERE journeys.id = %s {availability_available_part}
+    WITH journey_ids AS (
+        SELECT journeys.id FROM lines 
+        INNER JOIN routes ON routes.line = lines.id
+        INNER JOIN patterns ON patterns.route = routes.id
+        INNER JOIN journeys ON patterns.id = journeys.pattern
+        WHERE lines.id = %s
+    ),
+    journey_validities AS (
+        SELECT availabilities_per_journey.availability FROM journey_ids 
+        INNER JOIN availabilities_per_journey ON availabilities_per_journey.journey = journey_ids.id
+    ),
+    block_validities AS (
+        SELECT availabilities_per_block.availability FROM journey_ids
+        INNER JOIN rel_block_journey ON journey_ids.id =  rel_block_journey.journey
+        INNER JOIN availabilities_per_block ON availabilities_per_block.block = rel_block_journey.block
+    )
+    SELECT validity_conditions.* FROM validity_conditions WHERE validity_conditions.id IN 
+    (SELECT * FROM block_validities) OR validity_conditions.id IN (SELECT * FROM journey_validities)
+    {availability_available_part}
     """
 
-    departures_query_old = """
-SELECT journeys.id AS "journey", journeys.number, scheduled_stop_points.name, points_in_pattern.point_order AS "order", rel_stoppoint_quaycode.quay,
-points_in_pattern.timing_point,
-runtimes.time AS "runtime", waittimes.time AS "waittime" FROM journeys
-INNER JOIN patterns ON patterns.id = journeys.pattern
-INNER JOIN routes ON routes.id = patterns.route
-INNER JOIN lines ON lines.id = routes.line
-INNER JOIN points_in_pattern ON points_in_pattern.pattern = patterns.id
-INNER JOIN rel_stoppoint_quaycode ON rel_stoppoint_quaycode.id = points_in_pattern.stoppoint
-INNER JOIN scheduled_stop_points ON scheduled_stop_points.id = points_in_pattern.stoppoint
-LEFT JOIN runtimes ON runtimes.time_demand_type = journeys.time_demand_type AND
-runtimes.timing_link = points_in_pattern.timing_link
-LEFT JOIN waittimes ON waittimes.time_demand_type = journeys.time_demand_type AND
-waittimes.timing_link = points_in_pattern.timing_link
-WHERE lines.id = %s;
+    availability_relations_query = """
+    WITH journey_ids AS (
+        SELECT journeys.id FROM lines 
+        INNER JOIN routes ON routes.line = lines.id
+        INNER JOIN patterns ON patterns.route = routes.id
+        INNER JOIN journeys ON patterns.id = journeys.pattern
+        WHERE lines.id = %s
+    )
+    SELECT availabilities_per_journey.availability, availabilities_per_journey.journey AS ref, 'journey' AS refClass FROM journey_ids 
+    INNER JOIN availabilities_per_journey ON availabilities_per_journey.journey = journey_ids.id
+    UNION ALL
+    SELECT availabilities_per_block.availability, availabilities_per_block.block AS ref, 'block' AS refClass FROM journey_ids
+    INNER JOIN rel_block_journey ON journey_ids.id =  rel_block_journey.journey
+    INNER JOIN availabilities_per_block ON availabilities_per_block.block = rel_block_journey.block
     """
+
+    blocks_query = """
+    SELECT block, block_code, journey FROM (
+        SELECT blocks.id AS block, blocks.private_code AS block_code, rel_block_journey.journey FROM rel_block_journey
+        LEFT JOIN blocks ON blocks.id = rel_block_journey.block
+        INNER JOIN journeys ON rel_block_journey.journey = journeys.id
+        INNER JOIN patterns ON patterns.id =journeys.pattern
+        INNER JOIN routes ON routes.id = patterns.route
+        INNER JOIN lines ON lines.id = routes.line
+        WHERE lines.id = %s
+    )
+    """
+
     departures_query = """
 SELECT journeys.id AS "journey", journeys.number, COALESCE(scheduled_stop_points.name, (
     SELECT name FROM timing_points WHERE timing_points.id = points_in_pattern.timing_point
@@ -169,20 +196,63 @@ WHERE lines.id = %s ORDER BY journey, point_order;
             ("id","code","line_name","line_number","branding","line_mode_of_transport","type_of_product",),
             line_data
     ))
+
     if line['type_of_product'] is not None: line['type'] = line['type_of_product']
     elif line['branding'] is not None: line['type'] = line['branding']
     line['notes'] = []
 
-    journey_data = querying.query_all(cur, journey_query, (line_id,))
-    if not journey_data: return {'error':f'geen ritten voor {line_id}'}
+    journeys_data = querying.query_all(cur, journey_query, (line_id,))
+    if not journeys_data: return {'error':f'geen ritten voor {line_id}'}
 
     journeys = list(map(
         lambda x: dict(zip(
-            ("id","number","pattern","route_id","line_id","direction","line_name","line_number","monitored","starting_time","time_demand_type",),
+            ("id","number","pattern","route_id","line_id","direction","line_name","line_number","monitored","starting_time","time_demand_type"),
             x
         )),
-        journey_data
+        journeys_data
     ))
+
+    availabilities_data = querying.query_all(cur, availabilities_query, (line_id,))
+    availabilities = dict(
+        map(
+            lambda x: [x[0], {
+                'from':x[1],
+                'through':x[2],
+                'bits':x[3],
+                # 'is_available':x[4]
+            }],
+            availabilities_data
+        )
+    )
+    
+    availability_relations_data = querying.query_all(cur, availability_relations_query, (line_id,))
+    availabilities_per_journey = {}
+    availabilities_per_block = {}
+
+    for row in availability_relations_data:
+        relation = {
+            'availability':row[0], 'ref':row[1], 'refClass':row[2]
+        }
+        if relation['refClass'] == 'journey':
+            availabilities_per_journey.setdefault(relation['ref'], []).append(row[0])
+        if relation['refClass'] == 'block':
+            availabilities_per_block.setdefault(relation['ref'], []).append(row[0])
+
+    blocks_data = querying.query_all(cur, blocks_query, (line_id,))
+    blocks = {}
+    blocks_per_journey = {}
+    
+    for row in blocks_data:
+        block_availabilities = []
+        if row[0] in availabilities_per_block:
+            block_availabilities = availabilities_per_block[row[0]]
+
+        block = blocks.setdefault(row[0], {
+            'code':row[1],
+            'availabilities':block_availabilities
+        })
+        journey = blocks_per_journey.setdefault(row[2], [])
+        journey.append(row[0])
 
     departure_data = querying.query_all(cur, departures_query, (line_id,))
     if not departure_data: return {'error':f'geen vertrektijden voor {line_id}'}
@@ -223,46 +293,40 @@ WHERE lines.id = %s ORDER BY journey, point_order;
     departures = {}
     for departure in departure_list:
         departures.setdefault(departure['journey'], []).append(departure)
+    
 
     entry = {
             "line":line,
             "quays":{},
             "notes":notices_per_id,
-            "availabilities":{},
+            "availabilities":availabilities,
             "vehicles":{},
             "timetable":{},
-            "journeys":{}
+            "journeys":{},
+            "blocks":blocks
         }
 
     for journey in journeys:
-        availabilities = list(map(
-            lambda x: dict(zip(
-                ("id","from","through","bits",),
-                x
-            )),
-            querying.query_all(cur, availabilities_query, (journey['id'],))
-        ))
-
-        entry['availabilities'] = entry['availabilities'] | dict([i['id'], i] for i in availabilities)
+        if journey['id'] not in availabilities_per_journey: continue
 
         direction = entry['timetable'].setdefault(journey['direction'], {})
+
+        journey_departure_list = direction.setdefault(journey['id'], [])
 
         time_tracker = 0
 
         for departure in departures[journey['id']]:
 
-            departure_key = departure['quay']
+            quay_key = departure['quay']
             isTimingPoint = departure['timing_point'] is not None
 
             if not departure['quay']:
                 if isTimingPoint:
-                    departure_key = departure['timing_point']
+                    quay_key = departure['timing_point']
                 else:
-                    departure_key = departure['scheduled_stop_point']
+                    quay_key = departure['scheduled_stop_point']
 
-            quay = direction.setdefault(departure_key, [])
-
-            quay_in_entry = entry['quays'].setdefault(departure_key, {
+            quay_in_entry = entry['quays'].setdefault(quay_key, {
                 'quay_name':departure['name'],
                 'quay_code':departure['quay'],
                 'quay_location':None,
@@ -270,11 +334,7 @@ WHERE lines.id = %s ORDER BY journey, point_order;
             })
 
             if isTimingPoint:
-                quay_in_entry['timing_point'] = True
-
-            quay_direction_orders = quay_in_entry['known_orders'].setdefault(
-                journey['direction'], {}
-            )
+                quay_in_entry['timing_point'] = True # gets checked every time, not as efficient as setdefault
 
             arrival = time_tracker
 
@@ -285,16 +345,12 @@ WHERE lines.id = %s ORDER BY journey, point_order;
                 'arrival':arrival,
                 'departure':time_tracker,
                 'order':departure['order'],
-                'journey':journey['id'],
+                'quay':quay_key,
                 'notes':[],
-                'availabilities':[i['id'] for i in availabilities]
             }
 
             if 'boarding' in departure and departure['boarding'] == False: departure_info['boarding'] = departure['boarding']
             if 'alighting' in departure and departure['alighting'] == False: departure_info['alighting'] = departure['alighting']
-
-            departure_order_count = quay_direction_orders.setdefault(str(departure['order']), 0)
-            departure_order_count = departure_order_count + 1
 
             if departure['runtime']:
                 time_tracker = time_tracker + departure['runtime']
@@ -302,7 +358,7 @@ WHERE lines.id = %s ORDER BY journey, point_order;
             if departure['scheduled_stop_point'] in notices_per_for:
                departure_info['notes'] =  notices_per_for[departure['scheduled_stop_point']]
 
-            quay.append(departure_info)
+            journey_departure_list.append(departure_info)
 
         vehicle_index = entry['vehicles'].setdefault('None', # journey['vehicle_type'] ,
             len(entry['vehicles']))
@@ -311,12 +367,18 @@ WHERE lines.id = %s ORDER BY journey, point_order;
         if journey['id'] in notices_per_for:
             notes = notices_per_for[journey['id']]
 
+        blocks = []
+        if journey['id'] in blocks_per_journey:
+            blocks = blocks_per_journey[journey['id']]
+
         entry['journeys'][journey['id']] = {
             'number':journey['number'],
             'starting_time':journey['starting_time'],
             'route':journey['route_id'],
             'vehicle':vehicle_index,
-            'notes':notes
+            'availabilities':availabilities_per_journey[journey['id']],
+            'notes':notes,
+            'blocks':blocks
         }
 
     cur.close()
@@ -1072,6 +1134,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 2:
         d = getDepartures(sys.argv[2])
+        # d = getLine2(sys.argv[2])
         open('./output/departures.json', 'wb').write(json.dumps(d))
 
 
