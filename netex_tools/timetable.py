@@ -579,7 +579,8 @@ def plannedJourneys(journey_ids=[], timestamp=None, con=None, cur=None, querying
 
             destination_display = departure[8]
             if destination_display is not None:
-                departure_data['destination_display'] = destination_display
+                if destination_display != planned_journeys[journey_id]['DestinationDisplay']:
+                    departure_data['DestinationDisplay'] = destination_display
 
             if index != 0:
                 departure_data['AimedArrivalTime'] = time_tracker.isoformat()                    
@@ -1097,10 +1098,20 @@ def searchJourneys(searches=[], get_whole_blocks=False ,secrets_file_path=None):
                 SELECT blocks.private_code AS block_number, blocks.id AS block_id, rel_block_journey.journey FROM blocks
                 INNER JOIN rel_block_journey ON rel_block_journey.block = blocks.id 
             ) AS block_info ON block_info.journey = journeys.id
+            -- LEFT JOIN availabilities_per_block ON availabilities_per_block.block = block_id
+            -- LEFT JOIN (
+            --     SELECT id AS validity_id, SUBSTRING(bits FROM CAST(
+            --         EXTRACT(DAY FROM %s - available_from) AS INTEGER
+            --     ) + 1 FOR 1) AS availability_bit FROM validity_conditions
+            --     WHERE is_available IS NOT FALSE
+            --     AND available_from <= %s 
+            --     AND available_through >= %s
+            -- ) AS valid_validities ON valid_validities.validity_id = availabilities_per_block.availability
             INNER JOIN patterns ON patterns.id = journeys.pattern
             INNER JOIN routes ON routes.id = patterns.route
             INNER JOIN lines ON lines.id = routes.line
             INNER JOIN datasources ON datasources.id = lines.datasource_code
+            -- WHERE availability_bit != '0'
         )
         SELECT id, block_id FROM blocks_per_journey
         WHERE {" AND ".join(query_filters)}
